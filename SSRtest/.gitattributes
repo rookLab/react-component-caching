@@ -1,0 +1,5 @@
+# enforce lf on all files
+* text eol=lf
+
+*.png binary
+*.svg binary
