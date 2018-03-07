@@ -2204,11 +2204,10 @@ var ReactDOMServerRenderer = function () {
 
 
   ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
+    const start = {};
     if (this.exhausted) {
       return null;
     }
-    // console.log(cache);
-
     var out = '';
     while (out.length < bytes) {
       if (this.stack.length === 0) {
@@ -2216,14 +2215,9 @@ var ReactDOMServerRenderer = function () {
         break;
       }
       var frame = this.stack[this.stack.length - 1];
-      // console.log('----------------------------------------');
-      // console.log(frame);
       if (frame.childIndex >= frame.children.length) {
         var footer = frame.footer;
         out += footer;
-
-        // check if yo
-        // if()
         if (footer !== '') {
           this.previousWasTextNode = false;
         }
@@ -2244,12 +2238,9 @@ var ReactDOMServerRenderer = function () {
         // check the cache first, and add the rendered HTML to the cache if it isn't there.
         if (!cache[child.props.cacheKey]){
           // save the location (in 'out') to a cache property called toAdd
-          cache.toAdd = {'loc': out.length, "cacheKey": child.props.cacheKey};
+          start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          // add the cached HTML to the output
-          console.log('CACHE!!!!!!!!!')
-          console.log(cache);
           out += cache[child.props.cacheKey];
         }
       } else {
@@ -2260,20 +2251,42 @@ var ReactDOMServerRenderer = function () {
         resetCurrentDebugStack();
       }
     }
-    // add to cache - refactor, bc it only will cache a single component
-    let { loc, cacheKey } = cache.toAdd;
-    // currently, closing tag is hard coded
-    let closing = out.indexOf('</div>', loc)
-    closing += 6;
 
-    let cachedTag = out.slice(loc, closing);
-    cache[cacheKey] = cachedTag;
+    for (let component in start) {
+      let tagStack = [];
+      let pairs = {};
+
+      // store the opening and closing tag of the cached component in pairs object
+      let tagEnd = out.indexOf('>', start[component]) + 1;
+      let openingTag = out.slice(start[component],tagEnd);
+
+      let end = tagEnd;
+      let closingTag = '</' + openingTag.slice(1);
+      pairs[openingTag] = closingTag;
+      // push the opening tag onto the stack
+      tagStack.push(openingTag);
+
+      // while loop: while stack is not empty
+      while (tagStack.length !== 0) {
+        end = out.indexOf('<', end);
+        let newTagEnd = out.indexOf('>', end) + 1;
+        if (out[end+1] !== '/') {
+          let newTag = out.slice(end, newTagEnd);
+          pairs[newTag] = '</' + newTag.slice(1);
+          tagStack.push(newTag);
+        } else {
+          tagStack.pop();
+        }
+        end = newTagEnd;
+      }
+      // cache component by slicing 'out'
+      cache[component] = out.slice(start[component], end);
+    }
 
     return out;
   };
 
   ReactDOMServerRenderer.prototype.render = function render(child, context, parentNamespace) {
-    // console.log(child);
     if (typeof child === 'string' || typeof child === 'number') {
       var text = '' + child;
       if (text === '') {
