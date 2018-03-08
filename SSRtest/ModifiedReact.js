@@ -2261,23 +2261,27 @@ var ReactDOMServerRenderer = function () {
       let openingTag = out.slice(start[component],tagEnd);
 
       let end = tagEnd;
-      let closingTag = '</' + openingTag.slice(1);
-      pairs[openingTag] = closingTag;
-      // push the opening tag onto the stack
-      tagStack.push(openingTag);
+      if (out[tagEnd - 2] !== '/') {
+        let closingTag = '</' + openingTag.slice(1);
+        pairs[openingTag] = closingTag;
+        // push the opening tag onto the stack
+        tagStack.push(openingTag);
 
-      // while loop: while stack is not empty
-      while (tagStack.length !== 0) {
-        end = out.indexOf('<', end);
-        let newTagEnd = out.indexOf('>', end) + 1;
-        if (out[end+1] !== '/') {
-          let newTag = out.slice(end, newTagEnd);
-          pairs[newTag] = '</' + newTag.slice(1);
-          tagStack.push(newTag);
-        } else {
-          tagStack.pop();
+        // while loop: while stack is not empty
+        while (tagStack.length !== 0) {
+          end = out.indexOf('<', end);
+          let newTagEnd = out.indexOf('>', end) + 1;
+          if (out[newTagEnd - 2] !== '/') {
+            if (out[end+1] !== '/') {
+              let newTag = out.slice(end, newTagEnd);
+              pairs[newTag] = '</' + newTag.slice(1);
+              tagStack.push(newTag);
+            } else {
+              tagStack.pop();
+            }
+          }
+          end = newTagEnd;
         }
-        end = newTagEnd;
       }
       // cache component by slicing 'out'
       cache[component] = out.slice(start[component], end);
