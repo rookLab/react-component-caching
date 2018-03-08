@@ -2236,12 +2236,13 @@ var ReactDOMServerRenderer = function () {
 
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
       if(child.props.cacheKey){
-        if (!cache.get(child.props.cacheKey)){
+        // if (!cache.get(child.props.cacheKey)){
+        if(!cache[child.props.cacheKey]){
           start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.get(child.props.cacheKey);
-          // out += cache[child.props.cacheKey];
+          // out += cache.get(child.props.cacheKey);
+          out += cache[child.props.cacheKey];
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2299,8 +2300,8 @@ var ReactDOMServerRenderer = function () {
         }
       }
       // cache component by slicing 'out'
-      cache.set(component, out.slice(start[component], end));
-      // cache[component] = out.slice(start[component], end);
+      // cache.set(component, out.slice(start[component], end));
+      cache[component] = out.slice(start[component], end);
     }
 
     return out;
