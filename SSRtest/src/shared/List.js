@@ -12,9 +12,9 @@ export default class List extends Component {
         return (
             <div>
               <h1>Here's my list</h1>
-              <ListItem />
-              <ListItem />
-              <ListItem />
+              <ListItem cacheKey='thing1' />
+              <ListItem cacheKey='thing2' />
+              <ListItem cacheKey='thing3' />
             </div>
         );
     }

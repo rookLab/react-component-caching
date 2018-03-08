@@ -2205,6 +2205,7 @@ var ReactDOMServerRenderer = function () {
 
   ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
     const start = {};
+    console.log('Here is the cache', cache);
     if (this.exhausted) {
       return null;
     }
@@ -2254,27 +2255,26 @@ var ReactDOMServerRenderer = function () {
 
     for (let component in start) {
       let tagStack = [];
-      let pairs = {};
 
-      // store the opening and closing tag of the cached component in pairs object
+      // update end index to end of tag
       let tagEnd = out.indexOf('>', start[component]) + 1;
       let openingTag = out.slice(start[component],tagEnd);
-
       let end = tagEnd;
+
+      // Check if component is itself a self-closing tag (skip stack logic)
       if (out[tagEnd - 2] !== '/') {
-        let closingTag = '</' + openingTag.slice(1);
-        pairs[openingTag] = closingTag;
         // push the opening tag onto the stack
         tagStack.push(openingTag);
 
         // while loop: while stack is not empty
         while (tagStack.length !== 0) {
+          // move end index forward to next tag
           end = out.indexOf('<', end);
           let newTagEnd = out.indexOf('>', end) + 1;
+          // Check for self-closing tag (skip stack logic)
           if (out[newTagEnd - 2] !== '/') {
             if (out[end+1] !== '/') {
               let newTag = out.slice(end, newTagEnd);
-              pairs[newTag] = '</' + newTag.slice(1);
               tagStack.push(newTag);
             } else {
               tagStack.pop();

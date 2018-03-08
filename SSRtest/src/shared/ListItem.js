@@ -9,9 +9,7 @@ export default class ListItem extends Component {
 
     render() {
         return (
-          <li>
-            haaaaaaaay
-          </li>
+          <img src="https://media.giphy.com/media/F9hQLAVhWnL56/giphy.gif" />
         );
     }
 
