@@ -2236,13 +2236,13 @@ var ReactDOMServerRenderer = function () {
 
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
       if(child.props.cacheKey){
-        // if (!cache.get(child.props.cacheKey)){
-        if(!cache[child.props.cacheKey]){
+        if (!cache.storage.get(child.props.cacheKey)){
+        // if(!cache[child.props.cacheKey]){
           start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          // out += cache.get(child.props.cacheKey);
-          out += cache[child.props.cacheKey];
+          out += cache.storage.get(child.props.cacheKey);
+          console.log(cache);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2252,19 +2252,6 @@ var ReactDOMServerRenderer = function () {
         resetCurrentDebugStack();
       }
     }
-
-    // function getTags(end, component, start){
-    //   let tagEnd = out.indexOf('>', end) + 1;
-    //   let openingTag = out.slice(start[component],tagEnd);
-
-    //   end = tagEnd;
-      
-    //   if (out[tagEnd - 2] !== '/') {
-    //     let closingTag = '</' + openingTag.slice(1);
-    //     pairs[openingTag] = closingTag;
-    //     tagStack.push(openingTag);
-    //   }
-    // }
 
     for (let component in start) {
       let tagStack = [];
@@ -2300,8 +2287,8 @@ var ReactDOMServerRenderer = function () {
         }
       }
       // cache component by slicing 'out'
-      // cache.set(component, out.slice(start[component], end));
-      cache[component] = out.slice(start[component], end);
+      cache.storage.set(component, out.slice(start[component], end));
+      // cache[component] = out.slice(start[component], end);
     }
 
     return out;

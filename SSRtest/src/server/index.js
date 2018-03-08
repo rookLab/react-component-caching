@@ -7,8 +7,8 @@ import App from '../shared/App';
 
 import LRUCache from '../../LRUCache';
 
-// can pass in max-size, otherwise defaults to 1 MILLION
-const cache = new LRUCache(500).componentCache;
+// can pass in max-size, otherwise defaults to 1 million
+const cache = new LRUCache(800);
 
 /**
  * Provides the server side rendered app. In development environment, this method is called by
