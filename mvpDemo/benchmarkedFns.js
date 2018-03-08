@@ -1,4 +1,5 @@
-// import React from "react";
+
+import React from "react";
 import ReactDOMServer from "../SSRtest/ModifiedReact";
 // import ReactDOMServer from "react-dom/server";
 import RecursiveDivs from "./RecursiveDivs";
