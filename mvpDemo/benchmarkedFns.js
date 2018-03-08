@@ -1,5 +1,5 @@
 import React from "react";
-import ReactDOMServer from "../index";
+import ReactDOMServer from "../SSRtest/ModifiedReact";
 // import ReactDOMServer from "react-dom/server";
 import RecursiveDivs from "./RecursiveDivs";
 
@@ -10,8 +10,11 @@ const depth = 4,
 
 const render = () => {
   ReactDOMServer.renderToString(
-    // <RecursiveDivs depth={depth} breadth={breadth} cacheKey="test"/>,
-    <RecursiveDivs depth={depth} breadth={breadth} />,
+    <div>
+      {/* <RecursiveDivs depth={depth} breadth={breadth} cachekey="key" /> */}
+      <RecursiveDivs depth={depth} breadth={breadth} />
+      <RecursiveDivs depth={depth} breadth={breadth} />
+    </div>,
     cache
   );
 };
