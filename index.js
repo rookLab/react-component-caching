@@ -26,6 +26,7 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
+var lruCache = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2235,13 +2236,11 @@ var ReactDOMServerRenderer = function () {
 
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
       if(child.props.cacheKey){
-        // check the cache first, and add the rendered HTML to the cache if it isn't there.
-        if (!cache[child.props.cacheKey]){
-          // save the location (in 'out') to a cache property called toAdd
+        if (!cache.storage.get(child.props.cacheKey)){
           start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache[child.props.cacheKey];
+          out += cache.storage.get(child.props.cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2255,17 +2254,19 @@ var ReactDOMServerRenderer = function () {
     for (let component in start) {
       let tagStack = [];
       let pairs = {};
+      let end;
 
       // store the opening and closing tag of the cached component in pairs object
       let tagEnd = out.indexOf('>', start[component]) + 1;
       let openingTag = out.slice(start[component],tagEnd);
 
-      let end = tagEnd;
+      end = tagEnd;
       if (out[tagEnd - 2] !== '/') {
         let closingTag = '</' + openingTag.slice(1);
         pairs[openingTag] = closingTag;
         // push the opening tag onto the stack
         tagStack.push(openingTag);
+        // getTags(end, component, start);
 
         // while loop: while stack is not empty
         while (tagStack.length !== 0) {
@@ -2284,7 +2285,8 @@ var ReactDOMServerRenderer = function () {
         }
       }
       // cache component by slicing 'out'
-      cache[component] = out.slice(start[component], end);
+      cache.storage.set(component, out.slice(start[component], end));
+      // cache[component] = out.slice(start[component], end);
     }
 
     return out;
