@@ -2237,12 +2237,10 @@ var ReactDOMServerRenderer = function () {
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
       if(child.props.cacheKey){
         if (!cache.storage.get(child.props.cacheKey)){
-        // if(!cache[child.props.cacheKey]){
           start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
           out += cache.storage.get(child.props.cacheKey);
-          console.log(cache);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
