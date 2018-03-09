@@ -2254,50 +2254,24 @@ var ReactDOMServerRenderer = function () {
 
     for (let component in start) {
       let tagStack = [];
-<<<<<<< HEAD
-=======
-      let pairs = {};
-      let end;
->>>>>>> 0f25537ae1db80b9c030058d253b1351c3dc4f1a
+      let tagStart;
+      let tagEnd;
 
-      // update end index to end of tag
-      let tagEnd = out.indexOf('>', start[component]) + 1;
-      let openingTag = out.slice(start[component],tagEnd);
-<<<<<<< HEAD
-      let end = tagEnd;
-
-      // Check if component is itself a self-closing tag (skip stack logic)
-=======
-
-      end = tagEnd;
->>>>>>> 0f25537ae1db80b9c030058d253b1351c3dc4f1a
-      if (out[tagEnd - 2] !== '/') {
-        // push the opening tag onto the stack
-        tagStack.push(openingTag);
-        // getTags(end, component, start);
-
-        // while loop: while stack is not empty
-        while (tagStack.length !== 0) {
-          // move end index forward to next tag
-          end = out.indexOf('<', end);
-          let newTagEnd = out.indexOf('>', end) + 1;
-          // Check for self-closing tag (skip stack logic)
-          if (out[newTagEnd - 2] !== '/') {
-            if (out[end+1] !== '/') {
-              let newTag = out.slice(end, newTagEnd);
-              tagStack.push(newTag);
-            } else {
-              tagStack.pop();
-            }
-          }
-          end = newTagEnd;
+      do {
+        if (!tagStart) tagStart = start[component];
+        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
+        tagEnd = out.indexOf('>', tagStart) + 1;
+        // Skip stack logic for void/self-closing elements
+        if (out[tagEnd - 2] !== '/') {
+          // Push opening tags onto stack; pop closing tags off of stack
+          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
+          else tagStack.pop();
         }
-      }
+      } while (tagStack.length !== 0);
+      
       // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], end));
-      // cache[component] = out.slice(start[component], end);
+      cache.storage.set(component, out.slice(start[component], tagEnd));
     }
-
     return out;
   };
 
