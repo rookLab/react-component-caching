@@ -2206,7 +2206,6 @@ var ReactDOMServerRenderer = function () {
 
   ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
     const start = {};
-    console.log('Here is the cache', cache);
     if (this.exhausted) {
       return null;
     }
@@ -2268,7 +2267,7 @@ var ReactDOMServerRenderer = function () {
           else tagStack.pop();
         }
       } while (tagStack.length !== 0);
-      
+
       // cache component by slicing 'out'
       cache.storage.set(component, out.slice(start[component], tagEnd));
     }
