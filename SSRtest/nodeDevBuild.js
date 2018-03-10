@@ -26,7 +26,6 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
-var lruCache = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2205,10 +2204,11 @@ var ReactDOMServerRenderer = function () {
 
 
   ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
-    const start = {};
+    var start = {};
     if (this.exhausted) {
       return null;
     }
+
     var out = '';
     while (out.length < bytes) {
       if (this.stack.length === 0) {
@@ -2228,58 +2228,47 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
 
       {
         setCurrentDebugStack(this.stack);
       }
 
-       // cacheKey: opts.genCacheKey ? opts.genCacheKey(saveProps) : JSON.stringify(saveProps)
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cached){
-
-        const cacheKey = child.type.name + JSON.stringify(child.props);
-
-        if (!cache.storage.get(cacheKey)){
-          start[cacheKey] = out.length;
+      if (child.props.cacheKey) {
+        if (!cache.storage.get(child.props.cacheKey)) {
+          start[child.props.cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(cacheKey);
+          out += cache.storage.get(child.props.cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
+
       {
         // TODO: Handle reentrant server render calls. This doesn't.
         resetCurrentDebugStack();
       }
     }
 
-    for (let component in start) {
-      let tagStack = [];
-      let pairs = {};
-      let end;
+    for (var component in start) {
+      var tagStack = [];
+      var pairs = {};
+      var tagEnd = out.indexOf('>', start[component]) + 1;
+      var openingTag = out.slice(start[component], tagEnd);
 
-      // store the opening and closing tag of the cached component in pairs object
-      let tagEnd = out.indexOf('>', start[component]) + 1;
-      let openingTag = out.slice(start[component],tagEnd);
-
-      end = tagEnd;
+      var end = tagEnd;
       if (out[tagEnd - 2] !== '/') {
-        let closingTag = '</' + openingTag.slice(1);
+        var closingTag = '</' + openingTag.slice(1);
         pairs[openingTag] = closingTag;
-        // push the opening tag onto the stack
         tagStack.push(openingTag);
-        // getTags(end, component, start);
 
-        // while loop: while stack is not empty
         while (tagStack.length !== 0) {
           end = out.indexOf('<', end);
-          let newTagEnd = out.indexOf('>', end) + 1;
+          var newTagEnd = out.indexOf('>', end) + 1;
           if (out[newTagEnd - 2] !== '/') {
-            if (out[end+1] !== '/') {
-              let newTag = out.slice(end, newTagEnd);
+            if (out[end + 1] !== '/') {
+              var newTag = out.slice(end, newTagEnd);
               pairs[newTag] = '</' + newTag.slice(1);
               tagStack.push(newTag);
             } else {
@@ -2289,9 +2278,7 @@ var ReactDOMServerRenderer = function () {
           end = newTagEnd;
         }
       }
-      // cache component by slicing 'out'
       cache.storage.set(component, out.slice(start[component], end));
-      // cache[component] = out.slice(start[component], end);
     }
 
     return out;
@@ -2313,7 +2300,9 @@ var ReactDOMServerRenderer = function () {
       return escapeTextForBrowser(text);
     } else {
       var nextChild;
+
       var _resolve = resolve(child, context);
+
       nextChild = _resolve.child;
       context = _resolve.context;
 
