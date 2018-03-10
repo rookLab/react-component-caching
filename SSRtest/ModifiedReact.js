@@ -2230,17 +2230,22 @@ var ReactDOMServerRenderer = function () {
       }
 
       var child = frame.children[frame.childIndex++];
+
       {
         setCurrentDebugStack(this.stack);
       }
 
+       // cacheKey: opts.genCacheKey ? opts.genCacheKey(saveProps) : JSON.stringify(saveProps)
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cacheKey){
-        if (!cache.storage.get(child.props.cacheKey)){
-          start[child.props.cacheKey] = out.length;
+      if(child.props.cached){
+
+        const cacheKey = child.type.name + JSON.stringify(child.props);
+
+        if (!cache.storage.get(cacheKey)){
+          start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(child.props.cacheKey);
+          out += cache.storage.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2253,24 +2258,42 @@ var ReactDOMServerRenderer = function () {
 
     for (let component in start) {
       let tagStack = [];
-      let tagStart;
-      let tagEnd;
+      let pairs = {};
+      let end;
 
-      do {
-        if (!tagStart) tagStart = start[component];
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
-        tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements
-        if (out[tagEnd - 2] !== '/') {
-          // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
-          else tagStack.pop();
+      // store the opening and closing tag of the cached component in pairs object
+      let tagEnd = out.indexOf('>', start[component]) + 1;
+      let openingTag = out.slice(start[component],tagEnd);
+
+      end = tagEnd;
+      if (out[tagEnd - 2] !== '/') {
+        let closingTag = '</' + openingTag.slice(1);
+        pairs[openingTag] = closingTag;
+        // push the opening tag onto the stack
+        tagStack.push(openingTag);
+        // getTags(end, component, start);
+
+        // while loop: while stack is not empty
+        while (tagStack.length !== 0) {
+          end = out.indexOf('<', end);
+          let newTagEnd = out.indexOf('>', end) + 1;
+          if (out[newTagEnd - 2] !== '/') {
+            if (out[end+1] !== '/') {
+              let newTag = out.slice(end, newTagEnd);
+              pairs[newTag] = '</' + newTag.slice(1);
+              tagStack.push(newTag);
+            } else {
+              tagStack.pop();
+            }
+          }
+          end = newTagEnd;
         }
-      } while (tagStack.length !== 0);
-
+      }
       // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
+      cache.storage.set(component, out.slice(start[component], end));
+      // cache[component] = out.slice(start[component], end);
     }
+
     return out;
   };
 

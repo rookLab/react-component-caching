@@ -18,7 +18,7 @@ export default class App extends Component {
             <div>
                 <h1>THIS IS AN APP</h1>
                 <Button />
-                <List cacheKey='list'/>
+                <List cached/>
                 <BlogPost />
             </div>
         );
