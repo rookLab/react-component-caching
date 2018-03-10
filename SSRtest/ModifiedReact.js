@@ -2230,17 +2230,39 @@ var ReactDOMServerRenderer = function () {
       }
 
       var child = frame.children[frame.childIndex++];
+
+      console.log('-----------------------------------')
+      // console.log(child);
+      // console.log(describeStackFrame(child));
+
+        console.log(child.props.cache, describeStackFrame(child));
       {
         setCurrentDebugStack(this.stack);
       }
 
+       // cacheKey: opts.genCacheKey ? opts.genCacheKey(saveProps) : JSON.stringify(saveProps)
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cacheKey){
-        if (!cache.storage.get(child.props.cacheKey)){
-          start[child.props.cacheKey] = out.length;
+      if(child.props.cache){
+
+        // child.props.cacheKey = JSON.stringify(describeStackFrame(child) + child.props);
+        // child.props.cacheKey = 'hello';
+        // const cutKey = JSON.stringify(describeStackFrame(child)).slice(10);
+        // console.log(child.type.displayName);
+        const cacheKey = child.type.name + JSON.stringify(child.props);
+        // child.props.cacheKey = 'hello';
+        // console.log(child.type.name);
+        // console.log(child);
+        // child.props.cacheKey = 'hello';
+        // console.log('nnnnnnnnnnnnnnnnnnnnnnnnnnnnneeeeeeeeeeeeeeeeeeeeeeeeewwwwwwwwwwwwwwwwwww');
+        // console.log('IT WORKSSSSSSSSSSSSSSSSS');
+        console.log(cache);
+        // console.log(child);
+
+        if (!cache.storage.get(cacheKey)){
+          start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(child.props.cacheKey);
+          out += cache.storage.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
