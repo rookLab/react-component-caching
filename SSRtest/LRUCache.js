@@ -10,7 +10,7 @@ export default class ComponentCache {
     }
     
 		this.storage = LRU({
-			max: config.max || 100000000000000,
+			max: config.max || 1000000000,
 			length: (n, key) => {
 				return n.length + key.length;
 			}

@@ -4,7 +4,7 @@
   "description": "Server side rendering template for React 16",
   "main": "src/index.js",
   "scripts": {
-    "start": "cross-env NODE_ENV=development babel-node src/index",
+    "start": "cross-env NODE_ENV=production babel-node src/index",
     "watch": "cross-env NODE_ENV=development babel-watch src/index",
     "build": "npm run build:client && npm run build:server && npm run build:node",
     "build:client": "cross-env NODE_ENV=production webpack -p --config webpack/client.production.js",
@@ -44,6 +44,7 @@
     "babel-preset-env": "^1.6.0",
     "babel-preset-react": "^6.24.1",
     "babel-preset-stage-0": "^6.24.1",
+    "babel-register": "^6.26.0",
     "copy-webpack-plugin": "^4.2.1",
     "cross-env": "^5.0.5",
     "css-hot-loader": "^1.3.1",

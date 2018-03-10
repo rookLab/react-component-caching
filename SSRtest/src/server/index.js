@@ -1,5 +1,11 @@
 import React from 'react';
+<<<<<<< HEAD
 import ReactDOM from '../../productionBuild';
+=======
+// import ReactDOM from '../../nodeProdBuild';
+// import ReactDOM from '../../browserDevBuild';
+import ReactDOM from '../../ModifiedReact';
+>>>>>>> ff1de9f113946f852ded727878248e3f6fe66fe8
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
 
@@ -8,14 +14,13 @@ import App from '../shared/App';
 import LRUCache from '../../LRUCache';
 
 // can pass in max-size, otherwise defaults to 1 million
+<<<<<<< HEAD
 const cache = new LRUCache(1000000);
+=======
+const cache = new LRUCache();
+>>>>>>> ff1de9f113946f852ded727878248e3f6fe66fe8
 
 /**
- * Provides the server side rendered app. In development environment, this method is called by
- * `react-hot-server-middleware`.
- *
- * This method renders the ejs template `public/views/index.ejs`.
- *
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
@@ -37,4 +42,8 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
+<<<<<<< HEAD
    };
+=======
+   };
+>>>>>>> ff1de9f113946f852ded727878248e3f6fe66fe8
