@@ -1,7 +1,7 @@
 import React from 'react';
 // import ReactDOM from '../../nodeProdBuild';
 // import ReactDOM from '../../browserDevBuild';
-import ReactCC from '../../../index';
+import ReactCC from '../../ModifiedReact';
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
 
@@ -16,6 +16,7 @@ const cache = new ReactCC.ComponentCache();
 export default ({ clientStats }) => async (req, res) => {
     const app = <App />;
     const start_cached = process.hrtime();
+    // const appString = ReactCC.renderToStaticMarkup(app, cache);
     const appString = ReactCC.renderToString(app, cache);
     const end_cached = process.hrtime(start_cached);
     console.info(

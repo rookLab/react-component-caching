@@ -2540,9 +2540,9 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element) {
+function renderToStaticMarkup(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity);
+  var markup = renderer.read(Infinity, cache);
   return markup;
 }
 
