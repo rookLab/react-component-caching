@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2013-present, Facebook, Inc.
  *
- * This source code is licensed under the MIT license found in the
+ * Portions of this source code are licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
@@ -26,7 +26,7 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
-var LRU = require('lru-cache');
+var lru = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2540,9 +2540,9 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element) {
+function renderToStaticMarkup(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity);
+  var markup = renderer.read(Infinity, cache);
   return markup;
 }
 
@@ -2608,7 +2608,7 @@ class ComponentCache {
 			};
     }
     
-		this.storage = LRU({
+		this.storage = lru({
 			max: config.max || 1000000000,
 			length: (n, key) => {
 				return n.length + key.length;
