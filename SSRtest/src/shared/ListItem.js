@@ -5,12 +5,21 @@ import './app.styl';
 /**
  * A List
  */
-export default class ListItem extends Component {
-
+export default class ListItem extends React.Component {
     render() {
-        return (
-          <img src='https://henricohumane.org/wp-content/uploads/2016/03/shutterstock_352176329-1024x769.jpg' width={300} />
+      const { depth, breadth } = this.props;
+  
+      if (depth <= 0) {
+        return <div>NO DEPTH</div>;
+      }
+  
+      let children = [];
+      for (let i = 0; i < breadth; i++) {
+        children.push(
+          <RecursiveDivs key={i} depth={depth - 1} breadth={breadth} />
         );
+      }
+  
+      return <div>{children}</div>;
     }
-
-}
+  }

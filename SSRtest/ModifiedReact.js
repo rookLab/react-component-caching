@@ -2270,6 +2270,7 @@ var ReactDOMServerRenderer = function () {
 
       // cache component by slicing 'out'
       cache.storage.set(component, out.slice(start[component], tagEnd));
+      console.log(cache);
     }
     return out;
   };
