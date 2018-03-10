@@ -37,10 +37,10 @@ const configureDevelopment = app => {
  * @param app Express app
  */
 const configureProduction = app => {
-    const clientStats = require('./assets/stats.json');
-    const serverRender = require('./assets/app.server.js').default;
+    const clientStats = require('../public/assets/stats.json');
+    const serverRender = require('../public/assets/app.server.js').default;
     const publicPath = '/';
-    const outputPath = join(__dirname, 'assets');
+    const outputPath = join(__dirname, '../public/assets');
 
     app.use(publicPath, express.static(outputPath));
     app.use(serverRender({
@@ -48,7 +48,7 @@ const configureProduction = app => {
         outputPath
     }));
 
-    app.set('views', join(__dirname, 'views'));
+    app.set('views', join(__dirname, '../public/views'));
 };
 
 const app = express();
