@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2013-present, Facebook, Inc.
  *
- * This source code is licensed under the MIT license found in the
+ * Portions of this source code are licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
@@ -26,6 +26,7 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
+var lru = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2204,11 +2205,10 @@ var ReactDOMServerRenderer = function () {
 
 
   ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
-    var start = {};
+    const start = {};
     if (this.exhausted) {
       return null;
     }
-
     var out = '';
     while (out.length < bytes) {
       if (this.stack.length === 0) {
@@ -2228,59 +2228,50 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-      var child = frame.children[frame.childIndex++];
 
+      var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
       }
 
-      if (child.props.cacheKey) {
-        if (!cache.storage.get(child.props.cacheKey)) {
-          start[child.props.cacheKey] = out.length;
+      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
+      if(child.props.cache){
+        const cacheKey = child.type.name + JSON.stringify(child.props);
+        if (!cache.storage.get(cacheKey)){
+          start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(child.props.cacheKey);
+          out += cache.storage.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
-
       {
         // TODO: Handle reentrant server render calls. This doesn't.
         resetCurrentDebugStack();
       }
     }
 
-    for (var component in start) {
-      var tagStack = [];
-      var pairs = {};
-      var tagEnd = out.indexOf('>', start[component]) + 1;
-      var openingTag = out.slice(start[component], tagEnd);
+    for (let component in start) {
+      let tagStack = [];
+      let tagStart;
+      let tagEnd;
 
-      var end = tagEnd;
-      if (out[tagEnd - 2] !== '/') {
-        var closingTag = '</' + openingTag.slice(1);
-        pairs[openingTag] = closingTag;
-        tagStack.push(openingTag);
-
-        while (tagStack.length !== 0) {
-          end = out.indexOf('<', end);
-          var newTagEnd = out.indexOf('>', end) + 1;
-          if (out[newTagEnd - 2] !== '/') {
-            if (out[end + 1] !== '/') {
-              var newTag = out.slice(end, newTagEnd);
-              pairs[newTag] = '</' + newTag.slice(1);
-              tagStack.push(newTag);
-            } else {
-              tagStack.pop();
-            }
-          }
-          end = newTagEnd;
+      do {
+        if (!tagStart) tagStart = start[component];
+        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
+        tagEnd = out.indexOf('>', tagStart) + 1;
+        // Skip stack logic for void/self-closing elements
+        if (out[tagEnd - 2] !== '/') {
+          // Push opening tags onto stack; pop closing tags off of stack
+          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
+          else tagStack.pop();
         }
-      }
-      cache.storage.set(component, out.slice(start[component], end));
-    }
+      } while (tagStack.length !== 0);
 
+      // cache component by slicing 'out'
+      cache.storage.set(component, out.slice(start[component], tagEnd));
+    }
     return out;
   };
 
@@ -2300,9 +2291,7 @@ var ReactDOMServerRenderer = function () {
       return escapeTextForBrowser(text);
     } else {
       var nextChild;
-
       var _resolve = resolve(child, context);
-
       nextChild = _resolve.child;
       context = _resolve.context;
 
@@ -2610,12 +2599,32 @@ function renderToStaticNodeStream(element) {
   return new ReactMarkupReadableStream(element, true);
 }
 
+class ComponentCache {
+  constructor(config = {}) {
+
+		if (Number.isInteger(config)) {
+			config = {
+				max:config
+			};
+    }
+    
+		this.storage = lru({
+			max: config.max || 1000000000,
+			length: (n, key) => {
+				return n.length + key.length;
+			}
+		});
+
+  }
+}  
+  
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
 var ReactDOMServerNode = {
   renderToString: renderToString,
   renderToStaticMarkup: renderToStaticMarkup,
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
+  ComponentCache: ComponentCache,
   version: ReactVersion
 };
 
