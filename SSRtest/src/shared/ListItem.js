@@ -14,7 +14,4 @@ export default class ListItem extends React.Component {
         </div>
         );
       }
-  
-      return <div>{children}</div>;
-    }
   }
