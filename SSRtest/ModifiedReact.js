@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2013-present, Facebook, Inc.
  *
- * This source code is licensed under the MIT license found in the
+ * Portions of this source code are licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
@@ -26,7 +26,7 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
-var lruCache = require('lru-cache');
+var lru = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2235,12 +2235,13 @@ var ReactDOMServerRenderer = function () {
       }
 
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cacheKey){
-        if (!cache.storage.get(child.props.cacheKey)){
-          start[child.props.cacheKey] = out.length;
+      if(child.props.cache){
+        const cacheKey = child.type.name + JSON.stringify(child.props);
+        if (!cache.storage.get(cacheKey)){
+          start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(child.props.cacheKey);
+          out += cache.storage.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2539,9 +2540,9 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element) {
+function renderToStaticMarkup(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity);
+  var markup = renderer.read(Infinity, cache);
   return markup;
 }
 
@@ -2598,12 +2599,32 @@ function renderToStaticNodeStream(element) {
   return new ReactMarkupReadableStream(element, true);
 }
 
+class ComponentCache {
+  constructor(config = {}) {
+
+		if (Number.isInteger(config)) {
+			config = {
+				max:config
+			};
+    }
+    
+		this.storage = lru({
+			max: config.max || 1000000000,
+			length: (n, key) => {
+				return n.length + key.length;
+			}
+		});
+
+  }
+}  
+  
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
 var ReactDOMServerNode = {
   renderToString: renderToString,
   renderToStaticMarkup: renderToStaticMarkup,
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
+  ComponentCache: ComponentCache,
   version: ReactVersion
 };
 
