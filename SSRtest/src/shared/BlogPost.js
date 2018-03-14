@@ -13,6 +13,7 @@ export default class BlogPost extends Component {
             <div>
               <h1>This is a great blog post!</h1>
               <BlogContent />
+              <p>{this.props.thing}</p>
             </div>
         );
     }

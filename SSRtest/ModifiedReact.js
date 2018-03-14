@@ -27,6 +27,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
+var redis = require('redis');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2235,15 +2236,19 @@ var ReactDOMServerRenderer = function () {
       }
 
       // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
-      if(child.props.cache){
+      if(child.props && child.props.cache){
         const cacheKey = child.type.name + JSON.stringify(child.props);
-        // console.log(cache.get(cacheKey));
-        if (!cache.get(cacheKey)){
-          start[cacheKey] = out.length;
-          out += this.render(child, frame.context, frame.domNamespace);
-        } else {
-          out += cache.get(cacheKey);
-        }
+
+        // get method will run callback
+        cache.get(cacheKey, (err, reply) => {
+          if(reply){
+            out += reply;
+          } else {
+            start[cacheKey] = out.length;
+            out += this.render(child, frame.context, frame.domNamespace);
+          }
+        });
+
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
@@ -2253,13 +2258,13 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
-    for (let component in start) {
+    for (let cacheKey in start) {
       let tagStack = [];
       let tagStart;
       let tagEnd;
 
       do {
-        if (!tagStart) tagStart = start[component];
+        if (!tagStart) tagStart = start[cacheKey];
         else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
         tagEnd = out.indexOf('>', tagStart) + 1;
         // Skip stack logic for void/self-closing elements
@@ -2271,7 +2276,9 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.set(component, out.slice(start[component], tagEnd));
+      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), (err, reply) => {
+        console.log(reply);
+      });
     }
     return out;
   };
@@ -2617,8 +2624,10 @@ class ComponentCache {
     });
   }
 
-  get(cacheKey) {
-    return this.storage.get(cacheKey)
+  get(cacheKey, cb) {
+    let reply = this.storage.get(cacheKey);
+    // return reply;
+    cb(null,reply);
   }
 
   set(cacheKey, html) {
