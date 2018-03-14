@@ -2234,14 +2234,15 @@ var ReactDOMServerRenderer = function () {
         setCurrentDebugStack(this.stack);
       }
 
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
+      // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
       if(child.props.cache){
         const cacheKey = child.type.name + JSON.stringify(child.props);
-        if (!cache.storage.get(cacheKey)){
+        // console.log(cache.get(cacheKey));
+        if (!cache.get(cacheKey)){
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(cacheKey);
+          out += cache.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2270,7 +2271,7 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
+      cache.set(component, out.slice(start[component], tagEnd));
     }
     return out;
   };
@@ -2613,8 +2614,15 @@ class ComponentCache {
 			length: (n, key) => {
 				return n.length + key.length;
 			}
-		});
+    });
+  }
 
+  get(cacheKey) {
+    return this.storage.get(cacheKey)
+  }
+
+  set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
   }
 }  
   
