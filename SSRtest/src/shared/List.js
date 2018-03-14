@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import ListItem from './ListItem.js';
+import ProductInfo from './ProductInfo.js';
 
 import './app.styl';
 
@@ -9,16 +10,13 @@ import './app.styl';
 export default class List extends Component {
     render() {
         let bunchOfProducts = [];
-        for (let i=0; i<100; i++) {
-            bunchOfProducts.push(<Product key={i} name={`Thing${i}`} description={'This product is awesome!'} price={Math.floor(Math.random() * 200)} />);
+        for (let i=0; i<10; i++) {
+            bunchOfProducts.push(<ProductInfo key={i} name={`Thing ${i}`} description="This product is awesome!" price={i * 10} nonTemplatized="THIS TEXT SHOULD NEVER CHANGE" cache />);
         }
         return (
             <div>
               <h1>Here's my list</h1>
               {bunchOfProducts}
-              {/* <ListItem />
-              <ListItem />
-              <ListItem /> */}
             </div>
         );
     }

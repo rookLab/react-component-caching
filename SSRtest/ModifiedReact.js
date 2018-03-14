@@ -2233,10 +2233,10 @@ var ReactDOMServerRenderer = function () {
       {
         setCurrentDebugStack(this.stack);
       }
-
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cache){
-        const cacheKey = child.type.name + JSON.stringify(child.props);
+      if(child.props && child.props.cache){
+        const cacheProps = child.props;
+        const cacheKey = child.type.name + JSON.stringify(cacheProps);
         if (!cache.storage.get(cacheKey)){
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
@@ -2256,7 +2256,10 @@ var ReactDOMServerRenderer = function () {
       let tagStack = [];
       let tagStart;
       let tagEnd;
-
+      console.log('start object', start)
+      console.log('tagStart: ', tagStart, 'tagEnd: ', tagEnd);
+      console.log('Looking for component', component);
+      console.log(tagStack);
       do {
         if (!tagStart) tagStart = start[component];
         else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
@@ -2271,8 +2274,8 @@ var ReactDOMServerRenderer = function () {
 
       // cache component by slicing 'out'
       cache.storage.set(component, out.slice(start[component], tagEnd));
-      console.log(cache);
     }
+    // console.log('CACHED IN STORAGE:', cache.storage);
     return out;
   };
 
