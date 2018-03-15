@@ -16,9 +16,6 @@ export default class List extends Component {
             <div>
               <h1>Here's my list</h1>
               {bunchOfPics}
-              {/* <ListItem />
-              <ListItem />
-              <ListItem /> */}
             </div>
         );
     }
