@@ -2206,9 +2206,10 @@ var ReactDOMServerRenderer = function () {
 
 
   ReactDOMServerRenderer.prototype.read = async function read(bytes, cache) {
+    // Promisify the get method, which is asynchronous for Redis
     const getAsync = promisify(cache.get).bind(cache);
     let continueLoop = true;
-
+    // Store starting locations of about-to-be-cached HTML within 'out'
     const start = {};
     if (this.exhausted) {
       return null;
@@ -2232,7 +2233,6 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
@@ -2240,17 +2240,10 @@ var ReactDOMServerRenderer = function () {
 
       // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
       if(child.props && child.props.cache){
+        // Create unique cacheKey as a function of component name and props
         const cacheKey = child.type.name + JSON.stringify(child.props);
 
-        // get method will run callback
-        // cache.get(cacheKey, (err, reply) => {
-        //   if(reply){
-        //     out += reply;
-        //   } else {
-        //     start[cacheKey] = out.length;
-        //     out += this.render(child, frame.context, frame.domNamespace);
-        //   }
-        // });
+        // Check cache (async function)
         const reply = await getAsync(cacheKey);
         if(reply){
           out += reply;
@@ -2258,7 +2251,7 @@ var ReactDOMServerRenderer = function () {
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         }
-
+      
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
@@ -2268,6 +2261,7 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
+    // Add newly marked items to the cache:
     for (let cacheKey in start) {
       let tagStack = [];
       let tagStart;
@@ -2288,7 +2282,6 @@ var ReactDOMServerRenderer = function () {
       // cache component by slicing 'out'
       cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
     }
-    // console.log(out);
     return out;
   };
 
@@ -2546,15 +2539,10 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+async function renderToString(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, false);
-  // var markup = renderer.read(Infinity, cache);
-  // console.log(markup)
-  var promise = renderer.read(Infinity,cache).then((success) => {
-    console.log(success);
-    return success;
-  });
-  return promise;
+  var markup = await renderer.read(Infinity,cache);
+  return markup;
 }
 
 /**

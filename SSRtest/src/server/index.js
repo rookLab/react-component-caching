@@ -8,9 +8,9 @@ import flushChunks from 'webpack-flush-chunks';
 import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
-// const cache = new ReactCC.ComponentCache();
-import redis from 'redis';
-const cache = redis.createClient();
+const cache = new ReactCC.ComponentCache();
+// import redis from 'redis';
+// const cache = redis.createClient();
 
 /**
  * @param clientStats Parameter passed by hot server middleware
@@ -18,9 +18,9 @@ const cache = redis.createClient();
 export default ({ clientStats }) => async (req, res) => {
     const app = <App />;
     const start_cached = process.hrtime();
-    // const appString = ReactCC.renderToStaticMarkup(app, cache);
-    // console.log(cache);
-    const appString = ReactCC.renderToString(app, cache);
+    
+    
+    const appString = await ReactCC.renderToString(app, cache);
     const end_cached = process.hrtime(start_cached);
     console.info(
       "Cached render time: %ds %dms",
