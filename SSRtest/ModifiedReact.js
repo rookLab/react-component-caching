@@ -27,6 +27,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2204,7 +2205,11 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache) {
+    // Promisify the get method, which is asynchronous for Redis
+    const getAsync = promisify(cache.get).bind(cache);
+    let continueLoop = true;
+    // Store starting locations of about-to-be-cached HTML within 'out'
     const start = {};
     if (this.exhausted) {
       return null;
@@ -2228,21 +2233,25 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
       }
 
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cache){
+      // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
+      if(child.props && child.props.cache){
+        // Create unique cacheKey as a function of component name and props
         const cacheKey = child.type.name + JSON.stringify(child.props);
-        if (!cache.storage.get(cacheKey)){
+
+        // Check cache (async function)
+        const reply = await getAsync(cacheKey);
+        if(reply){
+          out += reply;
+        } else {
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
-        } else {
-          out += cache.storage.get(cacheKey);
         }
+      
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
@@ -2252,13 +2261,14 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
-    for (let component in start) {
+    // Add newly marked items to the cache:
+    for (let cacheKey in start) {
       let tagStack = [];
       let tagStart;
       let tagEnd;
 
       do {
-        if (!tagStart) tagStart = start[component];
+        if (!tagStart) tagStart = start[cacheKey];
         else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
         tagEnd = out.indexOf('>', tagStart) + 1;
         // Skip stack logic for void/self-closing elements
@@ -2270,7 +2280,7 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
+      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
     }
     return out;
   };
@@ -2529,9 +2539,9 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+async function renderToString(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
+  var markup = await renderer.read(Infinity,cache);
   return markup;
 }
 
@@ -2613,8 +2623,17 @@ class ComponentCache {
 			length: (n, key) => {
 				return n.length + key.length;
 			}
-		});
+    });
+  }
 
+  get(cacheKey, cb) {
+    let reply = this.storage.get(cacheKey);
+    // return reply;
+    cb(null,reply);
+  }
+
+  set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
   }
 }  
   

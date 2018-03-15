@@ -34,6 +34,7 @@
     "react": "^16.2.0",
     "react-dom": "^16.2.0",
     "react-universal-component": "^2.5.5",
+    "redis": "^2.8.0",
     "webpack-flush-chunks": "^1.1.23",
     "winston": "^2.3.1"
   },

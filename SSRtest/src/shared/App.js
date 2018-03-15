@@ -19,7 +19,7 @@ export default class App extends Component {
                 <h1>THIS IS AN APP</h1>
                 <Button />
                 <List cache/>
-                <BlogPost />
+                <BlogPost thing='haha'/>
             </div>
         );
     }
