@@ -9,7 +9,7 @@ import './app.styl';
 export default class List extends Component {
     render() {
         let bunchOfPics = [];
-        for (let i=0; i<1000; i++) {
+        for (let i=0; i<1; i++) {
             bunchOfPics.push(<ListItem key={i}/>);
         }
         return (

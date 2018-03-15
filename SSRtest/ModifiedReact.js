@@ -27,7 +27,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
-var redis = require('redis');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2205,7 +2205,10 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache) {
+    const getAsync = promisify(cache.get).bind(cache);
+    let continueLoop = true;
+
     const start = {};
     if (this.exhausted) {
       return null;
@@ -2240,14 +2243,21 @@ var ReactDOMServerRenderer = function () {
         const cacheKey = child.type.name + JSON.stringify(child.props);
 
         // get method will run callback
-        cache.get(cacheKey, (err, reply) => {
-          if(reply){
-            out += reply;
-          } else {
-            start[cacheKey] = out.length;
-            out += this.render(child, frame.context, frame.domNamespace);
-          }
-        });
+        // cache.get(cacheKey, (err, reply) => {
+        //   if(reply){
+        //     out += reply;
+        //   } else {
+        //     start[cacheKey] = out.length;
+        //     out += this.render(child, frame.context, frame.domNamespace);
+        //   }
+        // });
+        const reply = await getAsync(cacheKey);
+        if(reply){
+          out += reply;
+        } else {
+          start[cacheKey] = out.length;
+          out += this.render(child, frame.context, frame.domNamespace);
+        }
 
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2276,10 +2286,9 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), (err, reply) => {
-        console.log(reply);
-      });
+      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
     }
+    // console.log(out);
     return out;
   };
 
@@ -2539,8 +2548,13 @@ var ReactDOMServerRenderer = function () {
  */
 function renderToString(element, cache) {
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
-  return markup;
+  // var markup = renderer.read(Infinity, cache);
+  // console.log(markup)
+  var promise = renderer.read(Infinity,cache).then((success) => {
+    console.log(success);
+    return success;
+  });
+  return promise;
 }
 
 /**
