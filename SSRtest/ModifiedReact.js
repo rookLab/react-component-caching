@@ -2235,13 +2235,47 @@ var ReactDOMServerRenderer = function () {
       }
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
       if(child.props && child.props.cache){
-        const cacheProps = child.props;
+        let cacheProps; // Swaps out templatized props in props object with placeholder for use in cache key
+        // Initializing variables for templatization
+        let lookup;
+        let modifiedChild;
+        let isTemplate = child.props.templatized ? true : false;
+
+        if (isTemplate) {
+          // Copy props from props into cacheProps
+          cacheProps = Object.assign({}, child.props);
+
+          /* Lookup object for template post-processing where keys are placeholders
+             (e.g. {{0}}) and values are templatized prop names */
+          lookup = {};  
+          let templatizedProps = child.props.templatized;
+          if (typeof templatizedProps === 'string') templatizedProps = [templatizedProps];
+          for (let i = 0; i < templatizedProps.length; i++) {
+            const placeholder = `{{${i}}}`;
+            cacheProps[templatizedProps[i]] = placeholder;
+            lookup[placeholder] = templatizedProps[i];
+          }
+          modifiedChild = Object.assign({}, child);
+          modifiedChild.props = cacheProps;
+        }
+        if (!cacheProps) cacheProps = child.props;
         const cacheKey = child.type.name + JSON.stringify(cacheProps);
         if (!cache.storage.get(cacheKey)){
           start[cacheKey] = out.length;
-          out += this.render(child, frame.context, frame.domNamespace);
+          let r;
+          // If templatized component and a template does not exist in cache, render a template
+          if (isTemplate) {
+            r = this.render(modifiedChild, frame.context, frame.domNamespace);
+          }
+          else r = this.render(child, frame.context, frame.domNamespace);
+          // Need to render templatized version - is there a way to do that?
+          out += r;
         } else {
-          out += cache.storage.get(cacheKey);
+          let r = cache.storage.get(cacheKey);
+          if (isTemplate) {
+            // Post-process the template 
+          }
+          out += r;
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2252,30 +2286,29 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
+    // DOES THIS ALWAYS RUN? E.G. ARE WE ALWAYS RE-SETTING IN CACHE?
     for (let component in start) {
       let tagStack = [];
       let tagStart;
       let tagEnd;
-      console.log('start object', start)
-      console.log('tagStart: ', tagStart, 'tagEnd: ', tagEnd);
-      console.log('Looking for component', component);
-      console.log(tagStack);
+
       do {
         if (!tagStart) tagStart = start[component];
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
+        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
         tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements
-        if (out[tagEnd - 2] !== '/') {
+        // Skip stack logic for void/self-closing elements and HTML comments 
+        // Note: Does not account for tags inside HTML comments
+        if (out[tagEnd - 2] !== '/' && 
+          (out.slice(tagStart + 1, tagStart + 4) !== '!--')) {
           // Push opening tags onto stack; pop closing tags off of stack
           if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
           else tagStack.pop();
         }
       } while (tagStack.length !== 0);
-
       // cache component by slicing 'out'
       cache.storage.set(component, out.slice(start[component], tagEnd));
     }
-    // console.log('CACHED IN STORAGE:', cache.storage);
+    // console.log('STORED IN CACHE', cache.storage);
     return out;
   };
 

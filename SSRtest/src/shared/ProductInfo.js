@@ -5,6 +5,7 @@ export default class ProductInfo extends Component {
   render() { 
     return (
       <div>
+        {/* This is a comment */}
         <p><strong>Product Name: </strong>{this.props.name}</p>
         <p><strong>Product Description: </strong>{this.props.description}</p>
         <p><strong>Price: </strong>${this.props.price}</p>
