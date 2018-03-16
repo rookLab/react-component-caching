@@ -9,14 +9,14 @@ $ npm install --save rapscallion
 ```
 
 ## Usage
-# In Node rendering server:
+### In Node rendering server:
 ```javascript
 const ReactCC = require("reactcc");
 
 // ...
 ```
 
-# In React app:
+### In React app:
 To cache a component, simply add a 'cache' property to it. To create a cache template, add both 'cache' and 'templatized'.
 
 ```javascript
@@ -40,6 +40,8 @@ ReactCC provides its own cache implementation as well as support for Redis and M
 **ReactCC LRU Cache Example:**
 
 ```javascript
+const ReactCC = require("reactcc");
+
 const cache = ReactCC.ComponentCache();
 
 ReactCC.renderToString(<App />, cache);
@@ -67,6 +69,9 @@ const cache = new Memcached(server location, options);
 // Make sure to pass in the lifetime of the data (in seconds) as a number.
 ReactCC.renderToString(<App />, cache, 1000);
 ```
+
+## Templatizing Cached Components
+Insert description and implementation here
 
 ## API
 
