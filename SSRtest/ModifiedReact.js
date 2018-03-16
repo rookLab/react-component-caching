@@ -2212,8 +2212,8 @@ var ReactDOMServerRenderer = function () {
       restoreProps: Restores actual props to a templatized component
     */
     const start = {}; 
-    let saveTemplates;
-    let loadedTemplates; 
+    let saveTemplates = [];
+    let loadedTemplates = {}; 
     const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
     };
@@ -2290,7 +2290,7 @@ var ReactDOMServerRenderer = function () {
         let r;
         let restoredTemplate;
 
-        if (loadedTemplates && loadedTemplates[cacheKey]) { // Component found in loaded templates
+        if (loadedTemplates[cacheKey]) { // Component found in loaded templates
           restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
         } else {
           let reply = cache.get(cacheKey); 
@@ -2306,11 +2306,9 @@ var ReactDOMServerRenderer = function () {
             // For simple (non-template) caching, save start index of component in output string
             if (!isTemplate) start[cacheKey] = out.length;
           } else { // Component found in cache
-            r = reply;
             if (isTemplate) {
-              restoredTemplate = restoreProps(r, realProps, lookup);
-              if (!loadedTemplates) loadedTemplates = {};
-              if (!loadedTemplates[cacheKey]) loadedTemplates[cacheKey] = r;
+              restoredTemplate = restoreProps(reply, realProps, lookup);
+              loadedTemplates[cacheKey] = r;
             }            
           } 
         }
@@ -2349,7 +2347,6 @@ var ReactDOMServerRenderer = function () {
       // Cache component by slicing 'out'
       const cachedComponent = out.slice(componentStart, tagEnd);
       if (typeof start[component] === 'object') {
-        if (!saveTemplates) saveTemplates = [];
         saveTemplates.push(start[component]);
         start[component].endIndex = tagEnd;
       }
