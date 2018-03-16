@@ -8,9 +8,9 @@ import flushChunks from 'webpack-flush-chunks';
 import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
-// const cache = new ReactCC.ComponentCache();
-import redis from 'redis';
-const cache = redis.createClient();
+const cache = new ReactCC.ComponentCache();
+// import redis from 'redis';
+// const cache = redis.createClient();
 // import memcached from 'memcached';
 // const cache = new memcached('localhost:11211');
 
