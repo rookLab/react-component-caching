@@ -5,7 +5,6 @@ export default class ProductInfo extends Component {
   render() { 
     return (
       <div>
-        {/* This is a comment */}
         <p><strong>Product Name: </strong>{this.props.name}</p>
         <p><strong>Product Description: </strong>{this.props.description}</p>
         <p><strong>Price: </strong>${this.props.price}</p>
@@ -15,15 +14,3 @@ export default class ProductInfo extends Component {
     );
   }
 }
-/*
-        
-        <p>Non-Templatized Prop: {this.props.nonTemplatized}</p>
-        <hr />     
-        
-        This works:
-           <p><strong>Product Name: </strong><span>{this.props.name}</span></p>
-        <p><strong>Product Description: </strong><span>{this.props.description}</span></p>
-        <p><strong>Price: </strong><span>${this.props.price}</span></p>
-        <p><strong>Non-Templatized Prop: </strong><span>{this.props.nonTemplatized}</span></p>
-        <hr />   
-*/

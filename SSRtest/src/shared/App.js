@@ -17,11 +17,12 @@ export default class App extends Component {
         return (
             <div>
                 <h1>THIS IS AN APP</h1>
-                
-                <List />
+                <Button cache />
                 <BlogPost day="Monday" cache templatized="day" />
                 <BlogPost day="Tuesday" cache templatized="day" />
-                <Button cache />
+                
+                <List />
+                
             </div>
         );
     }

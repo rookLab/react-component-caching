@@ -2204,13 +2204,22 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
-    let saveTemplates;
-    function restoreProps(template, props, lookup) {
+  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) { 
+    /* 
+      --- Component caching variables ---
+      start: Tracks start index in output string and templatization data for cached components
+      saveTemplates: Tracks templatized components so props can be restored in output string
+      restoreProps: Restores actual props to a templatized component
+    */
+    const start = {}; 
+    let saveTemplates; 
+    const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
-    }
-
-    const start = {};
+    };
+    
+    /*
+      --- Begin React 16 source code with addition of component caching logic ---
+    */
     if (this.exhausted) {
       return null;
     }
@@ -2238,44 +2247,46 @@ var ReactDOMServerRenderer = function () {
       {
         setCurrentDebugStack(this.stack);
       }
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
+      
+      /* 
+        --- Component caching logic ---
+      */
       if(child.props && child.props.cache) {
         let cacheKey;
-        let isTemplate;
-        if (child.props.templatized) isTemplate = true;
-        /* Lookup object for template post-processing where keys are placeholders
-              (e.g. {{0}}) and values are templatized prop names */
-        let lookup = {};
+        let isTemplate = child.props.templatized ? true : false;
+        let lookup;  
         let modifiedChild;
         let realProps;
 
         if (isTemplate) {
-          // First, find cache key from templatized props
-          // Swap out templatized props in props object with placeholder for use in cache key
+          // Generate templatized version of props to generate appropriate cache key
           let cacheProps = Object.assign({}, child.props); 
           let templatizedProps = child.props.templatized;
+          lookup = {};
+
           if (typeof templatizedProps === 'string') templatizedProps = [templatizedProps];
-          for (let i = 0; i < templatizedProps.length; i++) {
-            const placeholder = `{{${i}}}`;
-            cacheProps[templatizedProps[i]] = placeholder; 
-            lookup[placeholder] = templatizedProps[i]; // Move down to next if statement? (Extra work/space if not generating template)
-          }
+
+          // Generate template placeholders and lookup object for referencing prop names from placeholders
+          templatizedProps.forEach((templatizedProp, index) => {
+            const placeholder = `{{${index}}}`;
+            cacheProps[templatizedProp] = placeholder; 
+            lookup[placeholder] = templatizedProp; // Move down to next if statement? (Extra work/space if not generating template)
+          });
+          
           cacheKey = child.type.name + JSON.stringify(cacheProps);
 
-          // Check whether the component template is being generated
+          // Generate modified child with placeholder props to render template
           if (!start[cacheKey]) {
-            // Variables for templatization
             modifiedChild = Object.assign({}, child);
             modifiedChild.props = cacheProps;
             realProps = child.props;
           }
         } else {
-          // Not a template
+          // Generate cache key for non-templatized component from its name and props
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
 
-        // IF NOT FOUND IN CACHE
-        if (!cache.storage.get(cacheKey)){
+        if (!cache.storage.get(cacheKey)) { // Component not found in cache
           let r;
 
           // If templatized component and template hasn't been generated, render a template
@@ -2283,22 +2294,20 @@ var ReactDOMServerRenderer = function () {
             r = this.render(modifiedChild, frame.context, frame.domNamespace);
             start[cacheKey] = { startIndex: out.length, realProps, lookup };
           }
-          // Otherwise, render as normal with props for simple caching or if template was generated earlier in this render
+          // Otherwise, render with actual props
           else r = this.render(child, frame.context, frame.domNamespace);
 
-          // For simple component caching, bookmark the start index of component in output string
+          // For simple (non-template) caching, save start index of component in output string
           if (!isTemplate) start[cacheKey] = out.length;
-          // Note: no bookmark needed if template was generated earlier in the same render
+
           out += r;
-        // IF FOUND IN CACHE
-        } else {
-          // Cached component found in storage
+        } else {  // Component found in cache
           let r = cache.storage.get(cacheKey);
           let restoredTemplate;
           if (isTemplate) restoredTemplate = restoreProps(r, realProps, lookup);
           out += restoredTemplate ? restoredTemplate : r;
         }
-      } else {
+      } else {  // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
@@ -2307,6 +2316,9 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
+    /*
+      --- After initial render of cacheable components, recover from output string and store in cache ---
+    */
     for (let component in start) {
       let tagStack = [];
       let tagStart;
@@ -2325,7 +2337,7 @@ var ReactDOMServerRenderer = function () {
           else tagStack.pop();
         }
       } while (tagStack.length !== 0);
-      // cache component by slicing 'out'
+      // Cache component by slicing 'out'
       const cachedComponent = out.slice(componentStart, tagEnd);
       if (typeof start[component] === 'object') {
         if (!saveTemplates) saveTemplates = [];
@@ -2335,27 +2347,21 @@ var ReactDOMServerRenderer = function () {
       cache.storage.set(component, cachedComponent);
     }
     
-    console.log('HERE IS OUR CURRENT CACHE', cache.storage);
-    // RESTORE PROPS FOR ALL TEMPLATIZED COMPONENTS ONLY AFTER CACHING
+    // After caching all cacheable components, restore props to templates
     if (saveTemplates) {
       let outCopy = out;
       out = '';
       let bookmark = 0;
       saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
-      console.log('SAVED THESE TEMPLATES', saveTemplates)
-      for (let i = 0; i < saveTemplates.length; i++) {
-        out += outCopy.substring(bookmark, saveTemplates[i].startIndex)
-        bookmark = saveTemplates[i].endIndex;
-        let restoredTemplate = restoreProps(outCopy.slice(saveTemplates[i].startIndex, saveTemplates[i].endIndex), 
-          saveTemplates[i].realProps, saveTemplates[i].lookup);
-        console.log('RESTORED TEMPLATE', restoredTemplate);
-        out += restoredTemplate;
-      }
+      // Rebuild output string with actual props
+      saveTemplates.forEach(savedTemplate => {
+        out += outCopy.substring(bookmark, savedTemplate.startIndex)
+        bookmark = savedTemplate.endIndex;
+        out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
+          savedTemplate.realProps, savedTemplate.lookup);
+      });
       out += outCopy.substring(bookmark, outCopy.length);
     }
-    // let restoredTemplate = restoreProps(cachedComponent, start[component].realProps, start[component].lookup);
-        // THIS IS NO GOOD. IT MUTATES THE OUTPUT AND CHANGES EVERYTHING SO THE START FOR EVERYTHING IS WAY OFF
-        
     return out;
   };
 
