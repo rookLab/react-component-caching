@@ -2245,6 +2245,7 @@ var ReactDOMServerRenderer = function () {
 
         // Check cache (async function)
         const reply = await getAsync(cacheKey);
+        // console.log(reply)
         if(reply){
           out += reply;
         } else {
@@ -2280,7 +2281,7 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
+      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), 1000, (err) => console.log(err));
     }
     return out;
   };
