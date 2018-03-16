@@ -2286,7 +2286,7 @@ var ReactDOMServerRenderer = function () {
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
 
-        if (!cache.storage.get(cacheKey)) { // Component not found in cache
+        if (!cache.get(cacheKey)) { // Component not found in cache
           let r;
 
           // If templatized component and template hasn't been generated, render a template
@@ -2302,7 +2302,7 @@ var ReactDOMServerRenderer = function () {
 
           out += r;
         } else {  // Component found in cache
-          let r = cache.storage.get(cacheKey);
+          let r = cache.get(cacheKey);
           let restoredTemplate;
           if (isTemplate) restoredTemplate = restoreProps(r, realProps, lookup);
           out += restoredTemplate ? restoredTemplate : r;
@@ -2344,7 +2344,7 @@ var ReactDOMServerRenderer = function () {
         saveTemplates.push(start[component]);
         start[component].endIndex = tagEnd;
       }
-      cache.storage.set(component, cachedComponent);
+      cache.set(component, cachedComponent);
     }
     
     // After caching all cacheable components, restore props to templates
@@ -2703,9 +2703,16 @@ class ComponentCache {
 			length: (n, key) => {
 				return n.length + key.length;
 			}
-		});
-
+    });
   }
+  get(cacheKey, cb) {
+    return this.storage.get(cacheKey);
+  }
+
+  set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
+  }
+
 }  
   
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
