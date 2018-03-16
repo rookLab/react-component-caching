@@ -1,6 +1,10 @@
 # ReactCC
 
 ## Overview
+ReactCC is a component-level caching library for rendering React components on the server.
+- Use any of React's four server-side rendering methods
+- Cache simple components or templates
+- Choose from three cache implementations (LRU, Redis, or Memcached)
 
 ## Installation
 Using npm:
@@ -10,14 +14,17 @@ $ npm install --save rapscallion
 
 ## Usage
 ### In Node rendering server:
+Instantiate a cache and pass it into any rendering method as a second argument. Wherever you would use ReactDOM.renderToString, use ReactCC.renderToString.
 ```javascript
 const ReactCC = require("reactcc");
+const cache = ReactCC.ComponentCache();
+ReactCC.renderToString(<App />, cache>)
 
 // ...
 ```
 
 ### In React app:
-To cache a component, simply add a 'cache' property to it. To create a cache template, add both 'cache' and 'templatized'.
+To flag a component for caching, simply add a 'cache' property to it. To create a cache template, add both 'cache' and 'templatized', along with an array of props to templatize.
 
 ```javascript
 export default class App extends Component {
@@ -75,14 +82,13 @@ Insert description and implementation here
 
 ## API
 
-### `ReactCC`
+### ReactCC
 ReactCC gives you access to all four of React 16's server-side rendering methods, as well as additional functionality. ReactCC methods are described below.
 
-### `ComponentCache`
+### ComponentCache
 - `size`: (Optional) An integer representing the maximum size (in characters) of the cache. Defaults to 1 million.
 
 **Example:**
-
 ```javascript
 const cache = new ReactCC.ComponentCache();
 ```
@@ -93,7 +99,6 @@ const cache = new ReactCC.ComponentCache();
 - `memLife`: (Only if using Memcached) A number representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
-
 ```javascript
 ReactCC.renderToString(<App />, cache);
 ```
@@ -104,7 +109,6 @@ ReactCC.renderToString(<App />, cache);
 - `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
-
 ```javascript
 ReactCC.renderToStaticMarkup(<App />, cache);
 ```
@@ -115,7 +119,6 @@ ReactCC.renderToStaticMarkup(<App />, cache);
 - `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
-
 ```javascript
 ReactCC.renderToNodeStream(<App />, cache);
 ```
@@ -126,9 +129,6 @@ ReactCC.renderToNodeStream(<App />, cache);
 - `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
-
 ```javascript
 ReactCC.renderToStaticNodeStream(<App />, cache);
 ```
-
------
