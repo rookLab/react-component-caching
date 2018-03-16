@@ -9,14 +9,14 @@ $ npm install --save rapscallion
 ```
 
 ## Usage
-#In Node rendering server:
+# In Node rendering server:
 ```javascript
 const ReactCC = require("reactcc");
 
 // ...
 ```
 
-#In React app:
+# In React app:
 To cache a component, simply add a 'cache' property to it. To create a cache template, add both 'cache' and 'templatized'.
 
 ```javascript
