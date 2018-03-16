@@ -9,7 +9,7 @@ ReactCC is a component-level caching library for rendering React components on t
 ## Installation
 Using npm:
 ```shell
-$ npm install --save rapscallion
+$ npm install reactcc
 ```
 
 ## Usage
@@ -86,7 +86,7 @@ Insert description and implementation here
 ReactCC gives you access to all four of React 16's server-side rendering methods, as well as additional functionality. ReactCC methods are described below.
 
 ### ComponentCache
-- `size`: (Optional) An integer representing the maximum size (in characters) of the cache. Defaults to 1 million.
+- `size`: (*Optional*) An integer representing the maximum size (in characters) of the cache. Defaults to 1 million.
 
 **Example:**
 ```javascript
@@ -96,7 +96,7 @@ const cache = new ReactCC.ComponentCache();
 ### renderToString
 - `component`: The React component being rendered.
 - `cache`: The component cache
-- `memLife`: (Only if using Memcached) A number representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
+- `memLife`: (*Only if using Memcached*) A number representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
@@ -106,7 +106,7 @@ ReactCC.renderToString(<App />, cache);
 ### renderToStaticMarkup
 - `component`: The React component being rendered.
 - `cache`: The component cache
-- `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
+- `memLife`: (*Only if using Memcached*) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
@@ -116,7 +116,7 @@ ReactCC.renderToStaticMarkup(<App />, cache);
 ### renderToNodeStream
 - `component`: The React component being rendered.
 - `cache`: The component cache
-- `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
+- `memLife`: (*Only if using Memcached*) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
@@ -126,7 +126,7 @@ ReactCC.renderToNodeStream(<App />, cache);
 ### renderToStaticNodeStream
 - `component`: The React component being rendered.
 - `cache`: The component cache
-- `memLife`: (Only if using Memcached) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
+- `memLife`: (*Only if using Memcached*) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
