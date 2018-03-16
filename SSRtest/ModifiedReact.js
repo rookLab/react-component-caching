@@ -2205,7 +2205,7 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, memLife) {
     // Promisify the get method, which is asynchronous for Redis
     const getAsync = promisify(cache.get).bind(cache);
     let continueLoop = true;
@@ -2238,6 +2238,7 @@ var ReactDOMServerRenderer = function () {
         setCurrentDebugStack(this.stack);
       }
 
+<<<<<<< HEAD
       // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
       if(child.props && child.props.cache){
         // Create unique cacheKey as a function of component name and props
@@ -2245,11 +2246,22 @@ var ReactDOMServerRenderer = function () {
 
         // Check cache (async function)
         const reply = await getAsync(cacheKey);
+        // console.log(reply)
         if(reply){
           out += reply;
         } else {
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
+=======
+      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
+      if(child.props && child.props.cache){
+        const cacheKey = child.type.name + JSON.stringify(child.props);
+        if (!cache.get(cacheKey)){
+          start[cacheKey] = out.length;
+          out += this.render(child, frame.context, frame.domNamespace);
+        } else {
+          out += cache.get(cacheKey);
+>>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
         }
       
       } else {
@@ -2280,7 +2292,17 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
+<<<<<<< HEAD
+      if (memLife) {
+        cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), memLife, (err) => {
+          if(err) console.log(err)
+        });
+      } else {
+        cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
+      }
+=======
+      cache.set(component, out.slice(start[component], tagEnd));
+>>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
     }
     return out;
   };
@@ -2539,9 +2561,10 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-async function renderToString(element, cache) {
+async function renderToString(element, cache, memLife=0) {
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = await renderer.read(Infinity,cache);
+  var markup = await renderer.read(Infinity, cache, memLife);
   return markup;
 }
 
@@ -2625,16 +2648,22 @@ class ComponentCache {
 			}
     });
   }
+<<<<<<< HEAD
 
   get(cacheKey, cb) {
     let reply = this.storage.get(cacheKey);
     // return reply;
     cb(null,reply);
+=======
+  get(cacheKey, cb) {
+    return this.storage.get(cacheKey);
+>>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
   }
 
   set(cacheKey, html) {
     this.storage.set(cacheKey, html);
   }
+
 }  
   
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
