@@ -2238,7 +2238,6 @@ var ReactDOMServerRenderer = function () {
         setCurrentDebugStack(this.stack);
       }
 
-<<<<<<< HEAD
       // CACHING LOGIC: EXECUTES IF THE CHILD HAS A 'CACHE' PROP ON IT
       if(child.props && child.props.cache){
         // Create unique cacheKey as a function of component name and props
@@ -2246,22 +2245,11 @@ var ReactDOMServerRenderer = function () {
 
         // Check cache (async function)
         const reply = await getAsync(cacheKey);
-        // console.log(reply)
         if(reply){
           out += reply;
         } else {
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
-=======
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props && child.props.cache){
-        const cacheKey = child.type.name + JSON.stringify(child.props);
-        if (!cache.get(cacheKey)){
-          start[cacheKey] = out.length;
-          out += this.render(child, frame.context, frame.domNamespace);
-        } else {
-          out += cache.get(cacheKey);
->>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
         }
       
       } else {
@@ -2292,7 +2280,6 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-<<<<<<< HEAD
       if (memLife) {
         cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), memLife, (err) => {
           if(err) console.log(err)
@@ -2300,9 +2287,6 @@ var ReactDOMServerRenderer = function () {
       } else {
         cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
       }
-=======
-      cache.set(component, out.slice(start[component], tagEnd));
->>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
     }
     return out;
   };
@@ -2648,16 +2632,10 @@ class ComponentCache {
 			}
     });
   }
-<<<<<<< HEAD
 
   get(cacheKey, cb) {
     let reply = this.storage.get(cacheKey);
-    // return reply;
     cb(null,reply);
-=======
-  get(cacheKey, cb) {
-    return this.storage.get(cacheKey);
->>>>>>> 4b4c5a2a2344c9fedf609d15a46b33bb783e9fd6
   }
 
   set(cacheKey, html) {
