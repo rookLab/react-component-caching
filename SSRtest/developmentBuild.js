@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2013-present, Facebook, Inc.
  *
- * Portions of this source code are licensed under the MIT license found in the
+ * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
@@ -26,7 +26,6 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
-var lru = require('lru-cache');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2204,25 +2203,12 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) { 
-    /* 
-      --- Component caching variables ---
-      start: Tracks start index in output string and templatization data for cached components
-      saveTemplates: Tracks templatized components so props can be restored in output string
-      restoreProps: Restores actual props to a templatized component
-    */
-    const start = {}; 
-    let saveTemplates; 
-    const restoreProps = (template, props, lookup) => {
-      return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
-    };
-    
-    /*
-      --- Begin React 16 source code with addition of component caching logic ---
-    */
+  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
+    var start = {};
     if (this.exhausted) {
       return null;
     }
+
     var out = '';
     while (out.length < bytes) {
       if (this.stack.length === 0) {
@@ -2242,73 +2228,18 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
       }
-      
-      /* 
-        --- Component caching logic ---
-      */
-      if(child.props && child.props.cache) {
-        let cacheKey;
-        let isTemplate = child.props.templatized ? true : false;
-        let lookup;  
-        let modifiedChild;
-        let realProps;
-
-        if (isTemplate) {
-          // Generate templatized version of props to generate appropriate cache key
-          let cacheProps = Object.assign({}, child.props); 
-          let templatizedProps = child.props.templatized;
-          lookup = {};
-
-          if (typeof templatizedProps === 'string') templatizedProps = [templatizedProps];
-
-          // Generate template placeholders and lookup object for referencing prop names from placeholders
-          templatizedProps.forEach((templatizedProp, index) => {
-            const placeholder = `{{${index}}}`;
-            cacheProps[templatizedProp] = placeholder; 
-            lookup[placeholder] = templatizedProp; // Move down to next if statement? (Extra work/space if not generating template)
-          });
-          
-          cacheKey = child.type.name + JSON.stringify(cacheProps);
-
-          // Generate modified child with placeholder props to render template
-          if (!start[cacheKey]) {
-            modifiedChild = Object.assign({}, child);
-            modifiedChild.props = cacheProps;
-            realProps = child.props;
-          }
+      if (child.props.cacheKey) {
+        if (!cache.storage.get(child.props.cacheKey)) {
+          start[child.props.cacheKey] = out.length;
+          out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          // Generate cache key for non-templatized component from its name and props
-          cacheKey = child.type.name + JSON.stringify(child.props);
+          out += cache.storage.get(child.props.cacheKey);
         }
-
-        if (!cache.get(cacheKey)) { // Component not found in cache
-          let r;
-
-          // If templatized component and template hasn't been generated, render a template
-          if (!start[cacheKey] && isTemplate) {
-            r = this.render(modifiedChild, frame.context, frame.domNamespace);
-            start[cacheKey] = { startIndex: out.length, realProps, lookup };
-          }
-          // Otherwise, render with actual props
-          else r = this.render(child, frame.context, frame.domNamespace);
-
-          // For simple (non-template) caching, save start index of component in output string
-          if (!isTemplate) start[cacheKey] = out.length;
-
-          out += r;
-        } else {  // Component found in cache
-          let r = cache.get(cacheKey);
-          let restoredTemplate;
-          if (isTemplate) restoredTemplate = restoreProps(r, realProps, lookup);
-          out += restoredTemplate ? restoredTemplate : r;
-        }
-      } else {  
-        // Normal rendering for non-cached components
+      } else {
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
@@ -2317,51 +2248,24 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
-    /*
-      --- After initial render of cacheable components, recover from output string and store in cache ---
-    */
-    for (let component in start) {
-      let tagStack = [];
-      let tagStart;
-      let tagEnd;
-      let componentStart = (typeof start[component] === 'object') ? start[component].startIndex : start[component];
+    for (var component in start) {
+      var tagStack = [];
+      var tagStart = void 0;
+      var tagEnd = void 0;
 
       do {
-        if (!tagStart) tagStart = componentStart;
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
+        if (!tagStart) tagStart = start[component];else tagStart = out[tagEnd] === '<' ? tagEnd : out.indexOf('<', tagEnd);
         tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements and HTML comments 
-        // Note: Does not account for tags inside HTML comments
-        if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
+        // Skip stack logic for void/self-closing elements
+        if (out[tagEnd - 2] !== '/') {
           // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
-          else tagStack.pop();
+          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));else tagStack.pop();
         }
       } while (tagStack.length !== 0);
-      // Cache component by slicing 'out'
-      const cachedComponent = out.slice(componentStart, tagEnd);
-      if (typeof start[component] === 'object') {
-        if (!saveTemplates) saveTemplates = [];
-        saveTemplates.push(start[component]);
-        start[component].endIndex = tagEnd;
-      }
-      cache.set(component, cachedComponent);
-    }
-    
-    // After caching all cacheable components, restore props to templates
-    if (saveTemplates) {
-      let outCopy = out;
-      out = '';
-      let bookmark = 0;
-      saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
-      // Rebuild output string with actual props
-      saveTemplates.forEach(savedTemplate => {
-        out += outCopy.substring(bookmark, savedTemplate.startIndex)
-        bookmark = savedTemplate.endIndex;
-        out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
-          savedTemplate.realProps, savedTemplate.lookup);
-      });
-      out += outCopy.substring(bookmark, outCopy.length);
+
+      // cache component by slicing 'out'
+      cache.storage.set(component, out.slice(start[component], tagEnd));
+      console.log(cache);
     }
     return out;
   };
@@ -2382,7 +2286,9 @@ var ReactDOMServerRenderer = function () {
       return escapeTextForBrowser(text);
     } else {
       var nextChild;
+
       var _resolve = resolve(child, context);
+
       nextChild = _resolve.child;
       context = _resolve.context;
 
@@ -2631,9 +2537,9 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element, cache) {
+function renderToStaticMarkup(element) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity, cache);
+  var markup = renderer.read(Infinity);
   return markup;
 }
 
@@ -2690,39 +2596,12 @@ function renderToStaticNodeStream(element) {
   return new ReactMarkupReadableStream(element, true);
 }
 
-class ComponentCache {
-  constructor(config = {}) {
-
-		if (Number.isInteger(config)) {
-			config = {
-				max:config
-			};
-    }
-    
-		this.storage = lru({
-			max: config.max || 1000000000,
-			length: (n, key) => {
-				return n.length + key.length;
-			}
-    });
-  }
-  get(cacheKey, cb) {
-    return this.storage.get(cacheKey);
-  }
-
-  set(cacheKey, html) {
-    this.storage.set(cacheKey, html);
-  }
-
-}  
-  
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
 var ReactDOMServerNode = {
   renderToString: renderToString,
   renderToStaticMarkup: renderToStaticMarkup,
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
-  ComponentCache: ComponentCache,
   version: ReactVersion
 };
 

@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import ListItem from './ListItem.js';
+import ProductInfo from './ProductInfo.js';
 
 import './app.styl';
 
@@ -8,14 +9,15 @@ import './app.styl';
  */
 export default class List extends Component {
     render() {
-        let bunchOfPics = [];
-        for (let i=0; i<1000; i++) {
-            bunchOfPics.push(<ListItem key={i}/>);
+        let bunchOfProducts = [];
+        const templatizedProps = ["name", "description", "price"];
+        for (let i=0; i<100; i++) {
+            bunchOfProducts.push(<ProductInfo key={i} name={`Thing ${i}`} description="This product is awesome!" price={i * 10} nonTemplatized="THIS TEXT SHOULD NEVER CHANGE" cache templatized={templatizedProps} />);
         }
         return (
             <div>
               <h1>Here's my list</h1>
-              {bunchOfPics}
+              {bunchOfProducts}
             </div>
         );
     }
