@@ -2235,13 +2235,13 @@ var ReactDOMServerRenderer = function () {
       }
 
       // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cache){
+      if(child.props && child.props.cache){
         const cacheKey = child.type.name + JSON.stringify(child.props);
-        if (!cache.storage.get(cacheKey)){
+        if (!cache.get(cacheKey)){
           start[cacheKey] = out.length;
           out += this.render(child, frame.context, frame.domNamespace);
         } else {
-          out += cache.storage.get(cacheKey);
+          out += cache.get(cacheKey);
         }
       } else {
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2270,8 +2270,7 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
-      console.log(cache);
+      cache.set(component, out.slice(start[component], tagEnd));
     }
     return out;
   };
@@ -2614,9 +2613,16 @@ class ComponentCache {
 			length: (n, key) => {
 				return n.length + key.length;
 			}
-		});
-
+    });
   }
+  get(cacheKey, cb) {
+    return this.storage.get(cacheKey);
+  }
+
+  set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
+  }
+
 }  
   
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
