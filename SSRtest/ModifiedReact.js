@@ -2307,7 +2307,8 @@ var ReactDOMServerRenderer = function () {
           if (isTemplate) restoredTemplate = restoreProps(r, realProps, lookup);
           out += restoredTemplate ? restoredTemplate : r;
         }
-      } else {  // Normal rendering for non-cached components
+      } else {  
+        // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
