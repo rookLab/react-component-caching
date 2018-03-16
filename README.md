@@ -9,7 +9,7 @@ ReactCC is a component-level caching library for rendering React components on t
 ## Installation
 Using npm:
 ```shell
-$ npm install --save rapscallion
+$ npm install reactcc
 ```
 
 ## Usage

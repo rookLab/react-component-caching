@@ -1,3 +1,5 @@
+import { lstat } from 'fs';
+
 /** @license React v16.2.0
  * react-dom-server.node.development.js
  *
@@ -2287,6 +2289,9 @@ var ReactDOMServerRenderer = function () {
           // Generate cache key for non-templatized component from its name and props
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
+        if(memLife){
+          cacheKey = cacheKey.replace(/\s+/g, '|')
+        }
 
         const reply = await getAsync(cacheKey);
         if (!reply) { // Component not found in cache
@@ -2311,10 +2316,6 @@ var ReactDOMServerRenderer = function () {
         }
       } else {  
         // Normal rendering for non-cached components
-        
-
-
-
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
