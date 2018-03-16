@@ -9,7 +9,6 @@ import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
 const cache = new ReactCC.ComponentCache();
-
 /**
  * @param clientStats Parameter passed by hot server middleware
  */
