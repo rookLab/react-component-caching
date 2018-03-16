@@ -2212,7 +2212,8 @@ var ReactDOMServerRenderer = function () {
       restoreProps: Restores actual props to a templatized component
     */
     const start = {}; 
-    let saveTemplates; 
+    let saveTemplates;
+    let loadedTemplates; 
     const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
     };
@@ -2285,28 +2286,35 @@ var ReactDOMServerRenderer = function () {
           // Generate cache key for non-templatized component from its name and props
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
+        
+        let r;
+        let restoredTemplate;
 
-        if (!cache.get(cacheKey)) { // Component not found in cache
-          let r;
-
-          // If templatized component and template hasn't been generated, render a template
-          if (!start[cacheKey] && isTemplate) {
-            r = this.render(modifiedChild, frame.context, frame.domNamespace);
-            start[cacheKey] = { startIndex: out.length, realProps, lookup };
-          }
-          // Otherwise, render with actual props
-          else r = this.render(child, frame.context, frame.domNamespace);
-
-          // For simple (non-template) caching, save start index of component in output string
-          if (!isTemplate) start[cacheKey] = out.length;
-
-          out += r;
-        } else {  // Component found in cache
-          let r = cache.get(cacheKey);
-          let restoredTemplate;
-          if (isTemplate) restoredTemplate = restoreProps(r, realProps, lookup);
-          out += restoredTemplate ? restoredTemplate : r;
+        if (loadedTemplates && loadedTemplates[cacheKey]) { // Component found in loaded templates
+          restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
+        } else {
+          let reply = cache.get(cacheKey); 
+          if (!reply) {  // Component not found in cache
+            // If templatized component and template hasn't been generated, render a template
+            if (!start[cacheKey] && isTemplate) {
+              r = this.render(modifiedChild, frame.context, frame.domNamespace);
+              start[cacheKey] = { startIndex: out.length, realProps, lookup };
+            }
+            // Otherwise, render with actual props
+            else r = this.render(child, frame.context, frame.domNamespace);
+  
+            // For simple (non-template) caching, save start index of component in output string
+            if (!isTemplate) start[cacheKey] = out.length;
+          } else { // Component found in cache
+            r = reply;
+            if (isTemplate) {
+              restoredTemplate = restoreProps(r, realProps, lookup);
+              if (!loadedTemplates) loadedTemplates = {};
+              if (!loadedTemplates[cacheKey]) loadedTemplates[cacheKey] = r;
+            }            
+          } 
         }
+        out += restoredTemplate ? restoredTemplate : r;
       } else {  
         // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2356,7 +2364,7 @@ var ReactDOMServerRenderer = function () {
       saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
       // Rebuild output string with actual props
       saveTemplates.forEach(savedTemplate => {
-        out += outCopy.substring(bookmark, savedTemplate.startIndex)
+        out += outCopy.substring(bookmark, savedTemplate.startIndex);
         bookmark = savedTemplate.endIndex;
         out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
           savedTemplate.realProps, savedTemplate.lookup);
