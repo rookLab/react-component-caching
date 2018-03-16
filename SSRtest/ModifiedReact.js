@@ -2205,7 +2205,7 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, memLife) {
     // Promisify the get method, which is asynchronous for Redis
     const getAsync = promisify(cache.get).bind(cache);
     let continueLoop = true;
@@ -2281,7 +2281,13 @@ var ReactDOMServerRenderer = function () {
       } while (tagStack.length !== 0);
 
       // cache component by slicing 'out'
-      cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), 1000, (err) => console.log(err));
+      if (memLife) {
+        cache.set(cacheKey, out.slice(start[cacheKey], tagEnd), memLife, (err) => {
+          if(err) console.log(err)
+        });
+      } else {
+        cache.set(cacheKey, out.slice(start[cacheKey], tagEnd));
+      }
     }
     return out;
   };
@@ -2540,9 +2546,10 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-async function renderToString(element, cache) {
+async function renderToString(element, cache, memLife=0) {
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = await renderer.read(Infinity,cache);
+  var markup = await renderer.read(Infinity, cache, memLife);
   return markup;
 }
 
