@@ -2207,7 +2207,7 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, memLife) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, isStreaming, streamingStart, memLife) {
     /* 
       --- Component caching variables ---
       start: Tracks start index in output string and templatization data for cached components
@@ -2311,7 +2311,13 @@ var ReactDOMServerRenderer = function () {
             else r = this.render(child, frame.context, frame.domNamespace);
   
             // For simple (non-template) caching, save start index of component in output string
-            if (!isTemplate) start[cacheKey] = out.length;
+            if (!isTemplate) {
+              if (isStreaming) {
+                // streamingStart[cacheKey] = out.length;
+                streamingStart[cacheKey]  = streamingStart.sliceStartCount + out.length;
+                console.log("finalcount", streamingStart.finalSliceStart);
+              } else start[cacheKey] = out.length;
+            }
           } else { // Component found in cache
             if (isTemplate) {
               restoredTemplate = restoreProps(reply, realProps, lookup);
@@ -2333,30 +2339,31 @@ var ReactDOMServerRenderer = function () {
     /*
       --- After initial render of cacheable components, recover from output string and store in cache ---
     */
-    for (let component in start) {
-      let tagStack = [];
-      let tagStart;
-      let tagEnd;
-      let componentStart = (typeof start[component] === 'object') ? start[component].startIndex : start[component];
+    if (!isStreaming) {
+      for (let component in start) {
+        let tagStack = [];
+        let tagStart;
+        let tagEnd;
+        let componentStart = (typeof start[component] === 'object') ? start[component].startIndex : start[component];
 
-      do {
-        if (!tagStart) tagStart = componentStart;
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
-        tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements and HTML comments 
-        // Note: Does not account for tags inside HTML comments
-        if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
-          // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
-          else tagStack.pop();
+        do {
+          if (!tagStart) tagStart = componentStart;
+          else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
+          tagEnd = out.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          // Note: Does not account for tags inside HTML comments
+          if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
+            else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // Cache component by slicing 'out'
+        const cachedComponent = out.slice(componentStart, tagEnd);
+        if (typeof start[component] === 'object') {
+          saveTemplates.push(start[component]);
+          start[component].endIndex = tagEnd;
         }
-      } while (tagStack.length !== 0);
-      // Cache component by slicing 'out'
-      const cachedComponent = out.slice(componentStart, tagEnd);
-      if (typeof start[component] === 'object') {
-        saveTemplates.push(start[component]);
-        start[component].endIndex = tagEnd;
-      }
       if (memLife) {
         cache.set(component, cachedComponent, memLife, (err) => {
           if(err) console.log(err)
@@ -2366,20 +2373,25 @@ var ReactDOMServerRenderer = function () {
       }
     }
     
-    // After caching all cacheable components, restore props to templates
-    if (saveTemplates) {
-      let outCopy = out;
-      out = '';
-      let bookmark = 0;
-      saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
-      // Rebuild output string with actual props
-      saveTemplates.forEach(savedTemplate => {
-        out += outCopy.substring(bookmark, savedTemplate.startIndex);
-        bookmark = savedTemplate.endIndex;
-        out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
-          savedTemplate.realProps, savedTemplate.lookup);
-      });
-      out += outCopy.substring(bookmark, outCopy.length);
+      // After caching all cacheable components, restore props to templates
+      if (saveTemplates) {
+        let outCopy = out;
+        out = '';
+        let bookmark = 0;
+        saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
+        // Rebuild output string with actual props
+        saveTemplates.forEach(savedTemplate => {
+          out += outCopy.substring(bookmark, savedTemplate.startIndex);
+          bookmark = savedTemplate.endIndex;
+          out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
+            savedTemplate.realProps, savedTemplate.lookup);
+        });
+        out += outCopy.substring(bookmark, outCopy.length);
+      }
+    } else {
+      // console.log(out.length, streamingStart);
+      streamingStart.sliceStartCount += out.length;
+      console.log("rolling count", streamingStart["sliceStartCount"]);
     }
     return out;
   };
@@ -2667,21 +2679,31 @@ function _inherits(subClass, superClass) { if (typeof superClass !== "function" 
 var ReactMarkupReadableStream = function (_Readable) {
   _inherits(ReactMarkupReadableStream, _Readable);
 
-  function ReactMarkupReadableStream(element, makeStaticMarkup) {
+  function ReactMarkupReadableStream(element, makeStaticMarkup, cache, streamingStart, memLife) {
     _classCallCheck$1(this, ReactMarkupReadableStream);
 
     var _this = _possibleConstructorReturn(this, _Readable.call(this, {}));
     // Calls the stream.Readable(options) constructor. Consider exposing built-in
     // features like highWaterMark in the future.
 
-
+    _this.cache = cache;
+    _this.streamingStart = streamingStart;
+    _this.memLife = memLife;
     _this.partialRenderer = new ReactDOMServerRenderer(element, makeStaticMarkup);
     return _this;
   }
 
   ReactMarkupReadableStream.prototype._read = function _read(size) {
     try {
-      this.push(this.partialRenderer.read(size));
+      this.push(
+            this.partialRenderer.read(
+              size,
+              this.cache,
+              true,
+              this.streamingStart,
+              this.memLife
+            )
+      );
     } catch (err) {
       this.emit('error', err);
     }
@@ -2696,8 +2718,14 @@ var ReactMarkupReadableStream = function (_Readable) {
  */
 
 
-function renderToNodeStream(element) {
-  return new ReactMarkupReadableStream(element, false);
+function renderToNodeStream(element, cache, streamingStart, memLife=0) {
+      return new ReactMarkupReadableStream(
+        element,
+        false,
+        cache,
+        streamingStart,
+        memLife
+      );
 }
 
 /**

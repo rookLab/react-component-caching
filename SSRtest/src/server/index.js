@@ -7,6 +7,7 @@ import flushChunks from 'webpack-flush-chunks';
 
 import App from '../shared/App';
 
+import createCacheStream from "./cacheStream";
 // can pass in max-size, otherwise defaults to 1 million
 const cache = new ReactCC.ComponentCache();
 // import redis from 'redis';
@@ -14,10 +15,33 @@ const cache = new ReactCC.ComponentCache();
 // import memcached from 'memcached';
 // const cache = new memcached('localhost:11211');
 
+// Force NodeStream
+
+const htmlStart =
+  '<html><head><title>Page</title></head><body><div id="react-root">';
+const htmlEnd = "</div></body></html>";
+
+
+const streamingStart = {
+  sliceStartCount: htmlStart.length, 
+};
 /**
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
+  // Need To Come back To If Statement
+  if(true){
+    const cacheStream = createCacheStream(cache, streamingStart);
+    cacheStream.pipe(res);
+    cacheStream.write(htmlStart);
+
+    const stream = await ReactCC.renderToNodeStream(<App />, cache, streamingStart);
+    stream.pipe(cacheStream, { end: false });
+    stream.on("end", () => {
+      cacheStream.end(htmlEnd);
+    });
+  }
+  else{
     const app = <App />;
     const start_cached = process.hrtime();
     
@@ -37,4 +61,6 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
+  }
+    
    };
