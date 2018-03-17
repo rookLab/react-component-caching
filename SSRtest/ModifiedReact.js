@@ -2212,6 +2212,7 @@ var ReactDOMServerRenderer = function () {
       --- Component caching variables ---
       start: Tracks start index in output string and templatization data for cached components
       saveTemplates: Tracks templatized components so props can be restored in output string
+      loadedTemplates: Stores templates that have already been fetched from the cache so that the same template is not fetched several times
       restoreProps: Restores actual props to a templatized component
       getAsync: Convert asynchronous get method into a promise
     */
@@ -2274,7 +2275,7 @@ var ReactDOMServerRenderer = function () {
           // Generate template placeholders and lookup object for referencing prop names from placeholders
           templatizedProps.forEach((templatizedProp, index) => {
             const placeholder = `{{${index}}}`;
-            cacheProps[templatizedProp] = placeholder; 
+            cacheProps[templatizedProp] = placeholder;
             lookup[placeholder] = templatizedProp; // Move down to next if statement? (Extra work/space if not generating template)
           });
           
@@ -2296,7 +2297,7 @@ var ReactDOMServerRenderer = function () {
         let r;
         let restoredTemplate;
 
-        if (loadedTemplates[cacheKey]) { // Component found in loaded templates
+        if (isTemplate && loadedTemplates[cacheKey]) { // Component found in loaded templates
           restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
         } else {
           const reply = await getAsync(cacheKey);
