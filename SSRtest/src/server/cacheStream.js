@@ -1,5 +1,6 @@
 import { Transform } from "stream";
 import { create } from "domain";
+import { lstat } from "fs";
 
 const createCacheStream = (cache, streamingStart) => {
   const bufferedChunks = [];
@@ -32,15 +33,13 @@ const createCacheStream = (cache, streamingStart) => {
 
         do {
           if (!tagStart) tagStart = streamingStart[component];
-          else
-            tagStart =
-              html[tagEnd] === "<" ? tagEnd : html.indexOf("<", tagEnd);
-          tagEnd = html.indexOf(">", tagStart) + 1;
-          // Skip stack logic for void/self-closing elements
-          if (html[tagEnd - 2] !== "/") {
+          else tagStart = (html[tagEnd] === '<') ? tagEnd : html.indexOf('<', tagEnd);
+          tagEnd = html.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          // Note: Does not account for tags inside HTML comments
+          if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
             // Push opening tags onto stack; pop closing tags off of stack
-            if (html[tagStart + 1] !== "/")
-              tagStack.push(html.slice(tagStart, tagEnd));
+            if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));
             else tagStack.pop();
           }
         } while (tagStack.length !== 0);
@@ -49,7 +48,6 @@ const createCacheStream = (cache, streamingStart) => {
         cache.storage.set(component, html.slice(streamingStart[component], tagEnd));
       }
       //console.log("to be saved:", bufferedChunks.join(""));
-      //console.log(cache);
       cb();
     }
   });
