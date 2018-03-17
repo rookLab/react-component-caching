@@ -2308,7 +2308,7 @@ var ReactDOMServerRenderer = function () {
           } else { // Component found in cache
             if (isTemplate) {
               restoredTemplate = restoreProps(reply, realProps, lookup);
-              loadedTemplates[cacheKey] = r;
+              loadedTemplates[cacheKey] = reply;
             }            
           } 
         }
