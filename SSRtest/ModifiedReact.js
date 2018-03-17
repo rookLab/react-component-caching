@@ -2216,7 +2216,8 @@ var ReactDOMServerRenderer = function () {
       getAsync: Convert asynchronous get method into a promise
     */
     const start = {}; 
-    let saveTemplates;
+    let saveTemplates = [];
+    let loadedTemplates = {}; 
     const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
     };
@@ -2292,28 +2293,32 @@ var ReactDOMServerRenderer = function () {
         if(memLife){
           cacheKey = cacheKey.replace(/\s+/g, '|')
         }
+        let r;
+        let restoredTemplate;
 
-        const reply = await getAsync(cacheKey);
-        if (!reply) { // Component not found in cache
-          let r;
-
-          // If templatized component and template hasn't been generated, render a template
-          if (!start[cacheKey] && isTemplate) {
-            r = this.render(modifiedChild, frame.context, frame.domNamespace);
-            start[cacheKey] = { startIndex: out.length, realProps, lookup };
-          }
-          // Otherwise, render with actual props
-          else r = this.render(child, frame.context, frame.domNamespace);
-
-          // For simple (non-template) caching, save start index of component in output string
-          if (!isTemplate) start[cacheKey] = out.length;
-
-          out += r;
-        } else {  // Component found in cache
-          let restoredTemplate;
-          if (isTemplate) restoredTemplate = restoreProps(reply, realProps, lookup);
-          out += restoredTemplate ? restoredTemplate : reply;
+        if (loadedTemplates[cacheKey]) { // Component found in loaded templates
+          restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
+        } else {
+          const reply = await getAsync(cacheKey);
+          if (!reply) {  // Component not found in cache
+            // If templatized component and template hasn't been generated, render a template
+            if (!start[cacheKey] && isTemplate) {
+              r = this.render(modifiedChild, frame.context, frame.domNamespace);
+              start[cacheKey] = { startIndex: out.length, realProps, lookup };
+            }
+            // Otherwise, render with actual props
+            else r = this.render(child, frame.context, frame.domNamespace);
+  
+            // For simple (non-template) caching, save start index of component in output string
+            if (!isTemplate) start[cacheKey] = out.length;
+          } else { // Component found in cache
+            if (isTemplate) {
+              restoredTemplate = restoreProps(reply, realProps, lookup);
+              loadedTemplates[cacheKey] = reply;
+            }            
+          } 
         }
+        out += restoredTemplate ? restoredTemplate : r;
       } else {  
         // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2348,7 +2353,6 @@ var ReactDOMServerRenderer = function () {
       // Cache component by slicing 'out'
       const cachedComponent = out.slice(componentStart, tagEnd);
       if (typeof start[component] === 'object') {
-        if (!saveTemplates) saveTemplates = [];
         saveTemplates.push(start[component]);
         start[component].endIndex = tagEnd;
       }
@@ -2369,7 +2373,7 @@ var ReactDOMServerRenderer = function () {
       saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
       // Rebuild output string with actual props
       saveTemplates.forEach(savedTemplate => {
-        out += outCopy.substring(bookmark, savedTemplate.startIndex)
+        out += outCopy.substring(bookmark, savedTemplate.startIndex);
         bookmark = savedTemplate.endIndex;
         out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
           savedTemplate.realProps, savedTemplate.lookup);
