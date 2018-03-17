@@ -1,3 +1,5 @@
+import { lstat } from 'fs';
+
 /** @license React v16.2.0
  * react-dom-server.node.development.js
  *
@@ -27,6 +29,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2204,12 +2207,13 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) { 
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, memLife) {
     /* 
       --- Component caching variables ---
       start: Tracks start index in output string and templatization data for cached components
       saveTemplates: Tracks templatized components so props can be restored in output string
       restoreProps: Restores actual props to a templatized component
+      getAsync: Convert asynchronous get method into a promise
     */
     const start = {}; 
     let saveTemplates = [];
@@ -2217,6 +2221,7 @@ var ReactDOMServerRenderer = function () {
     const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
     };
+    const getAsync = promisify(cache.get).bind(cache); 
     
     /*
       --- Begin React 16 source code with addition of component caching logic ---
@@ -2243,7 +2248,6 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
@@ -2286,14 +2290,16 @@ var ReactDOMServerRenderer = function () {
           // Generate cache key for non-templatized component from its name and props
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
-        
+        if(memLife){
+          cacheKey = cacheKey.replace(/\s+/g, '|')
+        }
         let r;
         let restoredTemplate;
 
         if (loadedTemplates[cacheKey]) { // Component found in loaded templates
           restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
         } else {
-          let reply = cache.get(cacheKey); 
+          const reply = await getAsync(cacheKey);
           if (!reply) {  // Component not found in cache
             // If templatized component and template hasn't been generated, render a template
             if (!start[cacheKey] && isTemplate) {
@@ -2308,7 +2314,7 @@ var ReactDOMServerRenderer = function () {
           } else { // Component found in cache
             if (isTemplate) {
               restoredTemplate = restoreProps(reply, realProps, lookup);
-              loadedTemplates[cacheKey] = r;
+              loadedTemplates[cacheKey] = reply;
             }            
           } 
         }
@@ -2350,7 +2356,13 @@ var ReactDOMServerRenderer = function () {
         saveTemplates.push(start[component]);
         start[component].endIndex = tagEnd;
       }
-      cache.set(component, cachedComponent);
+      if (memLife) {
+        cache.set(component, cachedComponent, memLife, (err) => {
+          if(err) console.log(err)
+        });
+      } else {
+        cache.set(component, cachedComponent);
+      }
     }
     
     // After caching all cacheable components, restore props to templates
@@ -2625,9 +2637,10 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+async function renderToString(element, cache, memLife=0) {
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
+  var markup = await renderer.read(Infinity, cache, memLife);
   return markup;
 }
 
@@ -2711,8 +2724,10 @@ class ComponentCache {
 			}
     });
   }
+
   get(cacheKey, cb) {
-    return this.storage.get(cacheKey);
+    let reply = this.storage.get(cacheKey);
+    cb(null,reply);
   }
 
   set(cacheKey, html) {
