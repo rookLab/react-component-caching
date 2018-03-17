@@ -2294,38 +2294,36 @@ var ReactDOMServerRenderer = function () {
         if(memLife){
           cacheKey = cacheKey.replace(/\s+/g, '|')
         }
-        let r;
+        let rendered;
         let restoredTemplate;
 
         if (isTemplate && loadedTemplates[cacheKey]) { // Component found in loaded templates
           restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
         } else {
-          const reply = await getAsync(cacheKey);
-          if (!reply) {  // Component not found in cache
+          rendered = await getAsync(cacheKey);
+          if (!rendered) {  // Component not found in cache
             // If templatized component and template hasn't been generated, render a template
             if (!start[cacheKey] && isTemplate) {
-              r = this.render(modifiedChild, frame.context, frame.domNamespace);
+              rendered = this.render(modifiedChild, frame.context, frame.domNamespace);
               start[cacheKey] = { startIndex: out.length, realProps, lookup };
             }
             // Otherwise, render with actual props
-            else r = this.render(child, frame.context, frame.domNamespace);
+            else rendered = this.render(child, frame.context, frame.domNamespace);
   
             // For simple (non-template) caching, save start index of component in output string
             if (!isTemplate) {
               if (isStreaming) {
                 // streamingStart[cacheKey] = out.length;
                 streamingStart[cacheKey]  = streamingStart.sliceStartCount + out.length;
-                console.log("finalcount", streamingStart.finalSliceStart);
               } else start[cacheKey] = out.length;
             }
-          } else { // Component found in cache
-            if (isTemplate) {
-              restoredTemplate = restoreProps(reply, realProps, lookup);
-              loadedTemplates[cacheKey] = reply;
-            }            
+          // Component found in cache, and is templated
+          } else if (isTemplate) {
+            restoredTemplate = restoreProps(rendered, realProps, lookup);
+            loadedTemplates[cacheKey] = rendered;          
           } 
         }
-        out += restoredTemplate ? restoredTemplate : r;
+        out += restoredTemplate ? restoredTemplate : rendered;
       } else {  
         // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2391,7 +2389,6 @@ var ReactDOMServerRenderer = function () {
     } else {
       // console.log(out.length, streamingStart);
       streamingStart.sliceStartCount += out.length;
-      console.log("rolling count", streamingStart["sliceStartCount"]);
     }
     return out;
   };
@@ -2693,17 +2690,23 @@ var ReactMarkupReadableStream = function (_Readable) {
     return _this;
   }
 
-  ReactMarkupReadableStream.prototype._read = function _read(size) {
+  ReactMarkupReadableStream.prototype._read = async function _read(size) {
     try {
-      this.push(
-            this.partialRenderer.read(
-              size,
-              this.cache,
-              true,
-              this.streamingStart,
-              this.memLife
-            )
-      );
+      let readOutput = await this.partialRenderer.read(size,
+        this.cache,
+        true,
+        this.streamingStart,
+        this.memLife);
+      this.push(readOutput);
+      // this.push(
+      //   this.partialRenderer.read(
+      //     size,
+      //     this.cache,
+      //     true,
+      //     this.streamingStart,
+      //     this.memLife
+      //   )
+      // );
     } catch (err) {
       this.emit('error', err);
     }
