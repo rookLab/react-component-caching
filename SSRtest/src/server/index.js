@@ -29,7 +29,7 @@ const streamingStart = {
  */
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
-  if(true){
+  if(false){
     const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
     cacheStream.pipe(res);
     cacheStream.write(htmlStart);
@@ -40,7 +40,7 @@ export default ({ clientStats }) => async (req, res) => {
       cacheStream.end(htmlEnd);
     });
   }
-  else if (false){
+  else if (true){
     const app = <App />;
     const start_cached = process.hrtime();
     
