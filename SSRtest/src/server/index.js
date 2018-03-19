@@ -31,7 +31,7 @@ const streamingStart = {
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
   if(true){
-    const cacheStream = createCacheStream(cache, streamingStart);
+    const cacheStream = createCacheStream(cache, streamingStart, 30);
     cacheStream.pipe(res);
     cacheStream.write(htmlStart);
 
@@ -45,7 +45,7 @@ export default ({ clientStats }) => async (req, res) => {
     const app = <App />;
     const start_cached = process.hrtime();
     
-    const appString = await ReactCC.renderToStaticMarkup(app, cache, 30);
+    const appString = await ReactCC.renderToString(app, cache, 30);
     const end_cached = process.hrtime(start_cached);
     console.info(
       "Cached render time: %ds %dms",

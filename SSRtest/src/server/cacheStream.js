@@ -2,7 +2,7 @@ import { Transform } from "stream";
 import { create } from "domain";
 import { lstat } from "fs";
 
-const createCacheStream = (cache, streamingStart) => {
+const createCacheStream = (cache, streamingStart, memLife=0) => {
   const bufferedChunks = [];
   return new Transform({
     // transform() is called with each chunk of data
@@ -43,11 +43,15 @@ const createCacheStream = (cache, streamingStart) => {
             else tagStack.pop();
           }
         } while (tagStack.length !== 0);
-        //console.log(html.slice(streamingStart[component], tagEnd));
         // cache component by slicing 'html'
-        cache.set(component, html.slice(streamingStart[component], tagEnd));
+        if (memLife) {
+          cache.set(component, html.slice(streamingStart[component], tagEnd), memLife, (err) => {
+            if(err) console.log(err)
+          });
+        } else {
+          cache.set(component, html.slice(streamingStart[component], tagEnd));
+        }
       }
-      //console.log("to be saved:", bufferedChunks.join(""));
       cb();
     }
   });

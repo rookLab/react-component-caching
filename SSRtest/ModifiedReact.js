@@ -2387,7 +2387,6 @@ var ReactDOMServerRenderer = function () {
         out += outCopy.substring(bookmark, outCopy.length);
       }
     } else {
-      // console.log(out.length, streamingStart);
       streamingStart.sliceStartCount += out.length;
     }
     return out;
@@ -2698,15 +2697,6 @@ var ReactMarkupReadableStream = function (_Readable) {
         this.streamingStart,
         this.memLife);
       this.push(readOutput);
-      // this.push(
-      //   this.partialRenderer.read(
-      //     size,
-      //     this.cache,
-      //     true,
-      //     this.streamingStart,
-      //     this.memLife
-      //   )
-      // );
     } catch (err) {
       this.emit('error', err);
     }
@@ -2736,7 +2726,7 @@ function renderToNodeStream(element, cache, streamingStart, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element, cache, streamingStart, memLife) {
+function renderToStaticNodeStream(element, cache, streamingStart, memLife=0) {
   return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
