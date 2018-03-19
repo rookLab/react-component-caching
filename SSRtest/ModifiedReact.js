@@ -1,4 +1,6 @@
 import { lstat } from 'fs';
+import { Transform } from "stream";
+import { create } from "domain";
 
 /** @license React v16.2.0
  * react-dom-server.node.development.js
@@ -2387,7 +2389,6 @@ var ReactDOMServerRenderer = function () {
         out += outCopy.substring(bookmark, outCopy.length);
       }
     } else {
-      // console.log(out.length, streamingStart);
       streamingStart.sliceStartCount += out.length;
     }
     return out;
@@ -2650,7 +2651,7 @@ var ReactDOMServerRenderer = function () {
 async function renderToString(element, cache, memLife=0) {
   // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = await renderer.read(Infinity, cache, memLife);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2659,9 +2660,9 @@ async function renderToString(element, cache, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element, cache) {
+function renderToStaticMarkup(element, cache, memLife=0) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity, cache);
+  var markup = renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2698,15 +2699,6 @@ var ReactMarkupReadableStream = function (_Readable) {
         this.streamingStart,
         this.memLife);
       this.push(readOutput);
-      // this.push(
-      //   this.partialRenderer.read(
-      //     size,
-      //     this.cache,
-      //     true,
-      //     this.streamingStart,
-      //     this.memLife
-      //   )
-      // );
     } catch (err) {
       this.emit('error', err);
     }
@@ -2736,9 +2728,56 @@ function renderToNodeStream(element, cache, streamingStart, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element) {
-  return new ReactMarkupReadableStream(element, true);
+function renderToStaticNodeStream(element, cache, streamingStart, memLife=0) {
+  return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
+
+function createCacheStream(cache, streamingStart, memLife=0) {
+  const bufferedChunks = [];
+  return new Transform({
+    // transform() is called with each chunk of data
+    transform(data, enc, cb) {
+      // We store the chunk of data (which is a Buffer) in memory
+      bufferedChunks.push(data);
+      // Then pass the data unchanged onwards to the next stream
+      cb(null, data);
+    },
+
+    // flush() is called when everything is done
+    flush(cb) {
+      // We concatenate all the buffered chunks of HTML to get the full HTML, then cache it at "key"
+      let html = bufferedChunks.join("");
+      delete streamingStart.sliceStartCount; 
+
+      for (let component in streamingStart) {
+        let tagStack = [];
+        let tagStart;
+        let tagEnd;
+
+        do {
+          if (!tagStart) tagStart = streamingStart[component];
+          else tagStart = (html[tagEnd] === '<') ? tagEnd : html.indexOf('<', tagEnd);
+          tagEnd = html.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));
+            else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // cache component by slicing 'html'
+        if (memLife) {
+          cache.set(component, html.slice(streamingStart[component], tagEnd), memLife, (err) => {
+            if(err) console.log(err)
+          });
+        } else {
+          cache.set(component, html.slice(streamingStart[component], tagEnd));
+        }
+      }
+      cb();
+    }
+  });
+};
 
 class ComponentCache {
   constructor(config = {}) {
@@ -2775,6 +2814,7 @@ var ReactDOMServerNode = {
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
   ComponentCache: ComponentCache,
+  createCacheStream: createCacheStream,
   version: ReactVersion
 };
 

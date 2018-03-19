@@ -7,13 +7,12 @@ import flushChunks from 'webpack-flush-chunks';
 
 import App from '../shared/App';
 
-import createCacheStream from "./cacheStream";
 // can pass in max-size, otherwise defaults to 1 million
-// const cache = new ReactCC.ComponentCache();
+const cache = new ReactCC.ComponentCache();
 // import redis from 'redis';
 // const cache = redis.createClient();
-import memcached from 'memcached';
-const cache = new memcached('localhost:11211');
+// import memcached from 'memcached';
+// const cache = new memcached('localhost:11211');
 
 // Force NodeStream
 
@@ -29,24 +28,23 @@ const streamingStart = {
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
-  console.log(cache);
   // Need To Come back To If Statement
-  if(true){
-    const cacheStream = createCacheStream(cache, streamingStart);
+  if(false){
+    const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
     cacheStream.pipe(res);
     cacheStream.write(htmlStart);
 
-    const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart, 30);
+    const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
     stream.pipe(cacheStream, { end: false });
     stream.on("end", () => {
       cacheStream.end(htmlEnd);
     });
   }
-  else{
+  else if (true){
     const app = <App />;
     const start_cached = process.hrtime();
     
-    const appString = await ReactCC.renderToString(app, cache);
+    const appString = await ReactCC.renderToString(app, cache, 30);
     const end_cached = process.hrtime(start_cached);
     console.info(
       "Cached render time: %ds %dms",
