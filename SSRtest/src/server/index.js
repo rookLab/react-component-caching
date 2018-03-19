@@ -9,7 +9,7 @@ import App from '../shared/App';
 
 import createCacheStream from "./cacheStream";
 // can pass in max-size, otherwise defaults to 1 million
-// const cache = new ReactCC.ComponentCache();
+const cache = new ReactCC.ComponentCache();
 // import redis from 'redis';
 // const cache = redis.createClient();
 import memcached from 'memcached';

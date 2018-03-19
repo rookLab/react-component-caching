@@ -15,14 +15,7 @@ const createCacheStream = (cache, streamingStart, memLife=0) => {
 
     // flush() is called when everything is done
     flush(cb) {
-      // We concatenate all the buffered chunks of HTML to get the full HTML
-      // then cache it at "key"
-
-      // console.log(cache);
-      // console.log(bufferedChunks.join());
-      // cache.set(key, Buffer.concat(bufferedChunks));
-      // console.log("final", streamingStart.finalSliceStart);
-      //joinedChunks = bufferedChunks.join(""); 
+      // We concatenate all the buffered chunks of HTML to get the full HTML, then cache it at "key"
       let html = bufferedChunks.join("");
       delete streamingStart.sliceStartCount; 
 
@@ -36,7 +29,6 @@ const createCacheStream = (cache, streamingStart, memLife=0) => {
           else tagStart = (html[tagEnd] === '<') ? tagEnd : html.indexOf('<', tagEnd);
           tagEnd = html.indexOf('>', tagStart) + 1;
           // Skip stack logic for void/self-closing elements and HTML comments 
-          // Note: Does not account for tags inside HTML comments
           if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
             // Push opening tags onto stack; pop closing tags off of stack
             if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));
