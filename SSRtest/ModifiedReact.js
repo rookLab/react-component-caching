@@ -2650,7 +2650,7 @@ var ReactDOMServerRenderer = function () {
 async function renderToString(element, cache, memLife=0) {
   // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = await renderer.read(Infinity, cache, memLife);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2659,9 +2659,9 @@ async function renderToString(element, cache, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element, cache) {
+function renderToStaticMarkup(element, cache, memLife=0) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity, cache);
+  var markup = renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2736,8 +2736,8 @@ function renderToNodeStream(element, cache, streamingStart, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element) {
-  return new ReactMarkupReadableStream(element, true);
+function renderToStaticNodeStream(element, cache, streamingStart, memLife) {
+  return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
 class ComponentCache {

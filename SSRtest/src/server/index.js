@@ -29,7 +29,6 @@ const streamingStart = {
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
-  console.log(cache);
   // Need To Come back To If Statement
   if(true){
     const cacheStream = createCacheStream(cache, streamingStart);
@@ -42,11 +41,11 @@ export default ({ clientStats }) => async (req, res) => {
       cacheStream.end(htmlEnd);
     });
   }
-  else{
+  else if (false){
     const app = <App />;
     const start_cached = process.hrtime();
     
-    const appString = await ReactCC.renderToString(app, cache);
+    const appString = await ReactCC.renderToStaticMarkup(app, cache, 30);
     const end_cached = process.hrtime(start_cached);
     console.info(
       "Cached render time: %ds %dms",
