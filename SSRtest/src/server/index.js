@@ -16,31 +16,33 @@ const cache = new ReactCC.ComponentCache();
 
 // Force NodeStream
 
-const htmlStart =
-  '<html><head><title>Page</title></head><body><div id="react-root">';
-const htmlEnd = "</div></body></html>";
+// const htmlStart =
+//   '<html><head><title>Page</title></head><body><div id="react-root">';
+// const htmlEnd = "</div></body></html>";
 
 
-const streamingStart = {
-  sliceStartCount: htmlStart.length, 
-};
+// const streamingStart = {
+//   sliceStartCount: htmlStart.length, 
+// };
 /**
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
-  if(false){
-    const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
-    cacheStream.pipe(res);
-    cacheStream.write(htmlStart);
+  if(true){
+    ReactCC.renderToNodeStream(<App/>, cache, res); 
+    // const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
+    // cacheStream.pipe(res);
+    // cacheStream.write(htmlStart);
 
-    const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
-    stream.pipe(cacheStream, { end: false });
-    stream.on("end", () => {
-      cacheStream.end(htmlEnd);
-    });
+    // const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
+    // stream.pipe(cacheStream, { end: false });
+    // stream.on("end", () => {
+    //   cacheStream.end(htmlEnd);
+    // });
+
   }
-  else if (true){
+  else if (false){
     const app = <App />;
     const start_cached = process.hrtime();
     
