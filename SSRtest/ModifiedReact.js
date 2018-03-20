@@ -2713,7 +2713,7 @@ var ReactMarkupReadableStream = function (_Readable) {
  */
 
 
-function originalRenderToNodeStream(element, cache, streamingStart, memLife=0) {
+function renderToNodeStream(element, cache, streamingStart, memLife=0) {
       return new ReactMarkupReadableStream(
         element,
         false,
@@ -2807,28 +2807,28 @@ class ComponentCache {
 
 }  
 
-function renderToNodeStream(compo, cache, res){
+// function renderToNodeStream(compo, cache, res){
 
-  const htmlStart =
-  '<html><head><title>Page</title></head><body><div id="react-root">';
+//   const htmlStart =
+//   '<html><head><title>Page</title></head><body><div id="react-root">';
 
-  const htmlEnd = "</div></body></html>";
+//   const htmlEnd = "</div></body></html>";
 
-  const streamingStart = {
-    sliceStartCount: htmlStart.length, 
-  }
+//   const streamingStart = {
+//     sliceStartCount: htmlStart.length, 
+//   }
 
-  const cacheStream = createCacheStream(cache, streamingStart);
-    cacheStream.pipe(res);
-    cacheStream.write(htmlStart);
+//   const cacheStream = createCacheStream(cache, streamingStart);
+//     cacheStream.pipe(res);
+//     cacheStream.write(htmlStart);
 
-    const stream = originalRenderToNodeStream(compo, cache, streamingStart);
-    stream.pipe(cacheStream, { end: false });
-    stream.on("end", () => {
-      cacheStream.end(htmlEnd);
-    });
+//     const stream = originalRenderToNodeStream(compo, cache, streamingStart);
+//     stream.pipe(cacheStream, { end: false });
+//     stream.on("end", () => {
+//       cacheStream.end(htmlEnd);
+//     });
 
-}
+// }
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
 var ReactDOMServerNode = {
   renderToString: renderToString,

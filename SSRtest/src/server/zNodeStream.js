@@ -1,6 +1,7 @@
 import { Transform } from "stream";
-import { create } from "domain";
-import { lstat } from "fs";
+// import { create } from "domain";
+// import { lstat } from "fs";
+import { renderToNodeStream, renderToStaticNodeStream } from "../../ModifiedReact.js";
 
 const createCacheStream = (cache, streamingStart, memLife=0) => {
   const bufferedChunks = [];
@@ -49,4 +50,27 @@ const createCacheStream = (cache, streamingStart, memLife=0) => {
   });
 };
 
-export default createCacheStream;
+function zNodeStream(compo, staticMarkup, cache, res){
+
+  const htmlStart =
+  '<html><head><title>Page</title></head><body><div id="react-root">';
+
+  const htmlEnd = "</div></body></html>";
+
+  const streamingStart = {
+    sliceStartCount: htmlStart.length, 
+  }
+
+  const cacheStream = createCacheStream(cache, streamingStart);
+    cacheStream.pipe(res);
+    cacheStream.write(htmlStart);
+
+    const stream = staticMarkup? renderToStaticNodeStream(compo, cache, streamingStart) : renderToNodeStream(compo, cache, streamingStart);
+    stream.pipe(cacheStream, { end: false });
+    stream.on("end", () => {
+      cacheStream.end(htmlEnd);
+    });
+
+}
+
+export default zNodeStream;

@@ -4,7 +4,7 @@ import React from 'react';
 import ReactCC from '../../ModifiedReact';
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
-
+import zNodeStream from "./zNodeStream.js";
 import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
@@ -30,7 +30,7 @@ const cache = new ReactCC.ComponentCache();
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
   if(true){
-    ReactCC.renderToNodeStream(<App/>, cache, res); 
+    zNodeStream(<App/>, false, cache, res); 
     // const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
     // cacheStream.pipe(res);
     // cacheStream.write(htmlStart);
