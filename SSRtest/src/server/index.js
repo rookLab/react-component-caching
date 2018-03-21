@@ -4,7 +4,7 @@ import React from 'react';
 import ReactCC from 'react-dom/server'
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
-
+// import nodeStream from "./nodeStream.js";
 import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
@@ -17,31 +17,31 @@ import App from '../shared/App';
 // Force NodeStream
 // import createCacheStream from './cacheStream';
 
-const htmlStart =
-  '<html><head><title>Page</title></head><body><div id="react-root">';
-const htmlEnd = "</div></body></html>";
+// const htmlStart =
+//   '<html><head><title>Page</title></head><body><div id="react-root">';
+// const htmlEnd = "</div></body></html>";
 
 
-const streamingStart = {
-  sliceStartCount: htmlStart.length, 
-};
+// const streamingStart = {
+//   sliceStartCount: htmlStart.length, 
+// };
 /**
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
-  // if(false){
-    // const cacheStream = createCacheStream(cache, streamingStart);
+  if(true){
+    let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+
+    let htmlEnd =  "</div></body></html>";
+
+    ReactCC.renderToNodeStream(<App/>, cache, res, htmlStart, htmlEnd); 
+    // const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
     // cacheStream.pipe(res);
     // cacheStream.write(htmlStart);
 
-    ReactCC.renderToNodeStream(<App />, cache, res);
-    // stream.pipe(cacheStream, { end: false });
-    // stream.on("end", () => {
-    //   cacheStream.end(htmlEnd);
-    // });
-  // }
-  // else if (true){
+  }
+  else if (false){
     const app = <App />;
     const start_cached = process.hrtime();
     
@@ -61,6 +61,6 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
-  // }
+  }
     
-   };
+};
