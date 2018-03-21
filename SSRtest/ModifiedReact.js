@@ -1,3 +1,7 @@
+import { lstat } from 'fs';
+import { Transform } from "stream";
+import { create } from "domain";
+
 /** @license React v16.2.0
  * react-dom-server.node.development.js
  *
@@ -27,6 +31,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -2204,13 +2209,14 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) { 
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, isStreaming, streamingStart, memLife) {
     /* 
       --- Component caching variables ---
       start: Tracks start index in output string and templatization data for cached components
       saveTemplates: Tracks templatized components so props can be restored in output string
       loadedTemplates: Stores templates that have already been fetched from the cache so that the same template is not fetched several times
       restoreProps: Restores actual props to a templatized component
+      getAsync: Convert asynchronous get method into a promise
     */
     const start = {}; 
     let saveTemplates = [];
@@ -2218,6 +2224,7 @@ var ReactDOMServerRenderer = function () {
     const restoreProps = (template, props, lookup) => {
       return template.replace(/\{\{[0-9]+\}\}/g, match => props[lookup[match]]);
     };
+    const getAsync = promisify(cache.get).bind(cache); 
     
     /*
       --- Begin React 16 source code with addition of component caching logic ---
@@ -2244,7 +2251,6 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
@@ -2287,33 +2293,39 @@ var ReactDOMServerRenderer = function () {
           // Generate cache key for non-templatized component from its name and props
           cacheKey = child.type.name + JSON.stringify(child.props);
         }
-        
-        let r;
+        if(memLife){
+          cacheKey = cacheKey.replace(/\s+/g, '|')
+        }
+        let rendered;
         let restoredTemplate;
 
         if (isTemplate && loadedTemplates[cacheKey]) { // Component found in loaded templates
           restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
         } else {
-          let reply = cache.get(cacheKey); 
-          if (!reply) {  // Component not found in cache
+          rendered = await getAsync(cacheKey);
+          if (!rendered) {  // Component not found in cache
             // If templatized component and template hasn't been generated, render a template
             if (!start[cacheKey] && isTemplate) {
-              r = this.render(modifiedChild, frame.context, frame.domNamespace);
+              rendered = this.render(modifiedChild, frame.context, frame.domNamespace);
               start[cacheKey] = { startIndex: out.length, realProps, lookup };
             }
             // Otherwise, render with actual props
-            else r = this.render(child, frame.context, frame.domNamespace);
+            else rendered = this.render(child, frame.context, frame.domNamespace);
   
             // For simple (non-template) caching, save start index of component in output string
-            if (!isTemplate) start[cacheKey] = out.length;
-          } else { // Component found in cache
-            if (isTemplate) {
-              restoredTemplate = restoreProps(reply, realProps, lookup);
-              loadedTemplates[cacheKey] = reply;
-            }            
+            if (!isTemplate) {
+              if (isStreaming) {
+                // streamingStart[cacheKey] = out.length;
+                streamingStart[cacheKey]  = streamingStart.sliceStartCount + out.length;
+              } else start[cacheKey] = out.length;
+            }
+          // Component found in cache, and is templated
+          } else if (isTemplate) {
+            restoredTemplate = restoreProps(rendered, realProps, lookup);
+            loadedTemplates[cacheKey] = rendered;          
           } 
         }
-        out += restoredTemplate ? restoredTemplate : r;
+        out += restoredTemplate ? restoredTemplate : rendered;
       } else {  
         // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
@@ -2327,47 +2339,57 @@ var ReactDOMServerRenderer = function () {
     /*
       --- After initial render of cacheable components, recover from output string and store in cache ---
     */
-    for (let component in start) {
-      let tagStack = [];
-      let tagStart;
-      let tagEnd;
-      let componentStart = (typeof start[component] === 'object') ? start[component].startIndex : start[component];
+    if (!isStreaming) {
+      for (let component in start) {
+        let tagStack = [];
+        let tagStart;
+        let tagEnd;
+        let componentStart = (typeof start[component] === 'object') ? start[component].startIndex : start[component];
 
-      do {
-        if (!tagStart) tagStart = componentStart;
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
-        tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements and HTML comments 
-        // Note: Does not account for tags inside HTML comments
-        if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
-          // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
-          else tagStack.pop();
+        do {
+          if (!tagStart) tagStart = componentStart;
+          else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd);
+          tagEnd = out.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          // Note: Does not account for tags inside HTML comments
+          if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
+            else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // Cache component by slicing 'out'
+        const cachedComponent = out.slice(componentStart, tagEnd);
+        if (typeof start[component] === 'object') {
+          saveTemplates.push(start[component]);
+          start[component].endIndex = tagEnd;
         }
-      } while (tagStack.length !== 0);
-      // Cache component by slicing 'out'
-      const cachedComponent = out.slice(componentStart, tagEnd);
-      if (typeof start[component] === 'object') {
-        saveTemplates.push(start[component]);
-        start[component].endIndex = tagEnd;
+      if (memLife) {
+        cache.set(component, cachedComponent, memLife, (err) => {
+          if(err) console.log(err)
+        });
+      } else {
+        cache.set(component, cachedComponent);
       }
-      cache.set(component, cachedComponent);
     }
     
-    // After caching all cacheable components, restore props to templates
-    if (saveTemplates) {
-      let outCopy = out;
-      out = '';
-      let bookmark = 0;
-      saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
-      // Rebuild output string with actual props
-      saveTemplates.forEach(savedTemplate => {
-        out += outCopy.substring(bookmark, savedTemplate.startIndex);
-        bookmark = savedTemplate.endIndex;
-        out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
-          savedTemplate.realProps, savedTemplate.lookup);
-      });
-      out += outCopy.substring(bookmark, outCopy.length);
+      // After caching all cacheable components, restore props to templates
+      if (saveTemplates) {
+        let outCopy = out;
+        out = '';
+        let bookmark = 0;
+        saveTemplates.sort((a, b) => a.startIndex - b.startIndex);
+        // Rebuild output string with actual props
+        saveTemplates.forEach(savedTemplate => {
+          out += outCopy.substring(bookmark, savedTemplate.startIndex);
+          bookmark = savedTemplate.endIndex;
+          out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), 
+            savedTemplate.realProps, savedTemplate.lookup);
+        });
+        out += outCopy.substring(bookmark, outCopy.length);
+      }
+    } else {
+      streamingStart.sliceStartCount += out.length;
     }
     return out;
   };
@@ -2626,9 +2648,10 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+async function renderToString(element, cache, memLife=0) {
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2637,9 +2660,9 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element, cache) {
+function renderToStaticMarkup(element, cache, memLife=0) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity, cache);
+  var markup = renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2654,21 +2677,28 @@ function _inherits(subClass, superClass) { if (typeof superClass !== "function" 
 var ReactMarkupReadableStream = function (_Readable) {
   _inherits(ReactMarkupReadableStream, _Readable);
 
-  function ReactMarkupReadableStream(element, makeStaticMarkup) {
+  function ReactMarkupReadableStream(element, makeStaticMarkup, cache, streamingStart, memLife) {
     _classCallCheck$1(this, ReactMarkupReadableStream);
 
     var _this = _possibleConstructorReturn(this, _Readable.call(this, {}));
     // Calls the stream.Readable(options) constructor. Consider exposing built-in
     // features like highWaterMark in the future.
 
-
+    _this.cache = cache;
+    _this.streamingStart = streamingStart;
+    _this.memLife = memLife;
     _this.partialRenderer = new ReactDOMServerRenderer(element, makeStaticMarkup);
     return _this;
   }
 
-  ReactMarkupReadableStream.prototype._read = function _read(size) {
+  ReactMarkupReadableStream.prototype._read = async function _read(size) {
     try {
-      this.push(this.partialRenderer.read(size));
+      let readOutput = await this.partialRenderer.read(size,
+        this.cache,
+        true,
+        this.streamingStart,
+        this.memLife);
+      this.push(readOutput);
     } catch (err) {
       this.emit('error', err);
     }
@@ -2683,8 +2713,14 @@ var ReactMarkupReadableStream = function (_Readable) {
  */
 
 
-function renderToNodeStream(element) {
-  return new ReactMarkupReadableStream(element, false);
+function renderToNodeStream(element, cache, streamingStart, memLife=0) {
+      return new ReactMarkupReadableStream(
+        element,
+        false,
+        cache,
+        streamingStart,
+        memLife
+      );
 }
 
 /**
@@ -2692,9 +2728,56 @@ function renderToNodeStream(element) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element) {
-  return new ReactMarkupReadableStream(element, true);
+function renderToStaticNodeStream(element, cache, streamingStart, memLife=0) {
+  return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
+
+function createCacheStream(cache, streamingStart, memLife=0) {
+  const bufferedChunks = [];
+  return new Transform({
+    // transform() is called with each chunk of data
+    transform(data, enc, cb) {
+      // We store the chunk of data (which is a Buffer) in memory
+      bufferedChunks.push(data);
+      // Then pass the data unchanged onwards to the next stream
+      cb(null, data);
+    },
+
+    // flush() is called when everything is done
+    flush(cb) {
+      // We concatenate all the buffered chunks of HTML to get the full HTML, then cache it at "key"
+      let html = bufferedChunks.join("");
+      delete streamingStart.sliceStartCount; 
+
+      for (let component in streamingStart) {
+        let tagStack = [];
+        let tagStart;
+        let tagEnd;
+
+        do {
+          if (!tagStart) tagStart = streamingStart[component];
+          else tagStart = (html[tagEnd] === '<') ? tagEnd : html.indexOf('<', tagEnd);
+          tagEnd = html.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));
+            else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // cache component by slicing 'html'
+        if (memLife) {
+          cache.set(component, html.slice(streamingStart[component], tagEnd), memLife, (err) => {
+            if(err) console.log(err)
+          });
+        } else {
+          cache.set(component, html.slice(streamingStart[component], tagEnd));
+        }
+      }
+      cb();
+    }
+  });
+};
 
 class ComponentCache {
   constructor(config = {}) {
@@ -2712,8 +2795,10 @@ class ComponentCache {
 			}
     });
   }
+
   get(cacheKey, cb) {
-    return this.storage.get(cacheKey);
+    let reply = this.storage.get(cacheKey);
+    cb(null,reply);
   }
 
   set(cacheKey, html) {
@@ -2729,6 +2814,7 @@ var ReactDOMServerNode = {
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
   ComponentCache: ComponentCache,
+  createCacheStream: createCacheStream,
   version: ReactVersion
 };
 

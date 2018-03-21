@@ -9,14 +9,42 @@ import App from '../shared/App';
 
 // can pass in max-size, otherwise defaults to 1 million
 const cache = new ReactCC.ComponentCache();
+// import redis from 'redis';
+// const cache = redis.createClient();
+// import memcached from 'memcached';
+// const cache = new memcached('localhost:11211');
+
+// Force NodeStream
+
+const htmlStart =
+  '<html><head><title>Page</title></head><body><div id="react-root">';
+const htmlEnd = "</div></body></html>";
+
+
+const streamingStart = {
+  sliceStartCount: htmlStart.length, 
+};
 /**
  * @param clientStats Parameter passed by hot server middleware
  */
 export default ({ clientStats }) => async (req, res) => {
+  // Need To Come back To If Statement
+  if(false){
+    const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
+    cacheStream.pipe(res);
+    cacheStream.write(htmlStart);
+
+    const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
+    stream.pipe(cacheStream, { end: false });
+    stream.on("end", () => {
+      cacheStream.end(htmlEnd);
+    });
+  }
+  else if (true){
     const app = <App />;
     const start_cached = process.hrtime();
-    // const appString = ReactCC.renderToStaticMarkup(app, cache);
-    const appString = ReactCC.renderToString(app, cache);
+    
+    const appString = await ReactCC.renderToString(app, cache, 30);
     const end_cached = process.hrtime(start_cached);
     console.info(
       "Cached render time: %ds %dms",
@@ -32,4 +60,6 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
+  }
+    
    };

@@ -18,8 +18,8 @@ export default class App extends Component {
             <div>
                 <h1>THIS IS AN APP</h1>
                 <Button cache />
-                <BlogPost day="Monday" cache templatized="day" />
-                <BlogPost day="Tuesday" cache templatized="day" />
+                <BlogPost  cache />
+                <BlogPost  cache  />
                 
                 <List />
                 
