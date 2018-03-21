@@ -132,19 +132,29 @@ ReactCC.renderToStaticMarkup(<App />, cache);
 ### renderToNodeStream
 - `component`: The React component being rendered
 - `cache`: The component cache
+- `res`: The response object that Express provides
+- `htmlStart`: Start of html markup in string form
+- `htmlEnd`: End of html markup in string form
 - `memLife`: (*Only if using Memcached*) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
-ReactCC.renderToNodeStream(<App />, cache);
+let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+let htmlEnd =  '</div></body></html>';
+ReactCC.renderToNodeStream(<App />, cache, res, htmlStart, htmlEnd);
 ```
 
 ### renderToStaticNodeStream
 - `component`: The React component being rendered
 - `cache`: The component cache
+- `res`: The response object that Express provides
+- `htmlStart`: Start of html markup in string form
+- `htmlEnd`: End of html markup in string form
 - `memLife`: (*Only if using Memcached*) An integer representing the lifetime (in seconds) of each Memcached entry. Defaults to 0.
 
 **Example:**
 ```javascript
-ReactCC.renderToStaticNodeStream(<App />, cache);
+let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+let htmlEnd = '</div></body></html>';
+ReactCC.renderToStaticNodeStream(<App />, cache, res, htmlStart, htmlEnd);
 ```
