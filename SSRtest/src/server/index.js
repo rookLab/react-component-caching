@@ -40,12 +40,6 @@ export default ({ clientStats }) => async (req, res) => {
     // cacheStream.pipe(res);
     // cacheStream.write(htmlStart);
 
-    // const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
-    // stream.pipe(cacheStream, { end: false });
-    // stream.on("end", () => {
-    //   cacheStream.end(htmlEnd);
-    // });
-
   }
   else if (false){
     const app = <App />;
@@ -67,6 +61,6 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
-  // }
+  }
     
-   };
+};

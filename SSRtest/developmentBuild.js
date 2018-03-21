@@ -2750,18 +2750,28 @@ function createCacheStream(cache, streamingStart) {
         var tagEnd = void 0;
 
         do {
-          if (!tagStart) tagStart = streamingStart[component];else tagStart = html[tagEnd] === '<' ? tagEnd : html.indexOf('<', tagEnd);
+          if (!tagStart) {
+            tagStart = streamingStart[component];
+          } else {
+            tagStart = html[tagEnd] === '<' ? tagEnd : html.indexOf('<', tagEnd);
+          }
           tagEnd = html.indexOf('>', tagStart) + 1;
           // Skip stack logic for void/self-closing elements and HTML comments 
           if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
             // Push opening tags onto stack; pop closing tags off of stack
-            if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));else tagStack.pop();
+            if (html[tagStart + 1] !== '/') {
+              tagStack.push(html.slice(tagStart, tagEnd));
+            } else {
+              tagStack.pop();
+          }
           }
         } while (tagStack.length !== 0);
         // cache component by slicing 'html'
         if (memLife) {
           cache.set(component, html.slice(streamingStart[component], tagEnd), memLife, function (err) {
-            if (err) console.log(err);
+            if (err) {
+              console.log(err);
+            }
           });
         } else {
           cache.set(component, html.slice(streamingStart[component], tagEnd));
@@ -2782,7 +2792,7 @@ function originalRenderToNodeStream(element, cache, streamingStart) {
   return new ReactMarkupReadableStream(element, false, cache, streamingStart, memLife);
 }
 
-function renderToNodeStream(compo, cache, res) {
+function renderToNodeStream(element, cache, res) {
 
   var htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
 
@@ -2796,7 +2806,7 @@ function renderToNodeStream(compo, cache, res) {
   cacheStream.pipe(res);
   cacheStream.write(htmlStart);
 
-  var stream$$1 = originalRenderToNodeStream(compo, cache, streamingStart);
+  var stream$$1 = originalRenderToNodeStream(element, cache, streamingStart);
   stream$$1.pipe(cacheStream, { end: false });
   stream$$1.on("end", function () {
     cacheStream.end(htmlEnd);
@@ -2808,10 +2818,30 @@ function renderToNodeStream(compo, cache, res) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element, cache, streamingStart) {
+function originalRenderToStaticNodeStream(element, cache, streamingStart) {
   var memLife = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
 
   return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
+}
+
+function renderToStaticNodeStream(element, cache, res) {
+  var htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+
+  var htmlEnd = '</div></body></html>';
+
+  var streamingStart = {
+    sliceStartCount: htmlStart.length
+  };
+
+  var cacheStream = createCacheStream(cache, streamingStart);
+  cacheStream.pipe(res);
+  cacheStream.write(htmlStart);
+
+  var stream$$1 = originalRenderToStaticNodeStream(element, cache, streamingStart);
+  stream$$1.pipe(cacheStream, { end: false });
+  stream$$1.on("end", function () {
+    cacheStream.end(htmlEnd);
+  });
 }
 
 function createCommonjsModule(fn, module) {

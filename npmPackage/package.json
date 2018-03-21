@@ -23,5 +23,8 @@
     "fbjs": "^0.8.16",
     "lru-cache": "^4.1.2",
     "object-assign": "^4.1.1"
+  },
+  "devDependencies": {
+    "uglifyjs-webpack-plugin": "^1.2.4"
   }
 }

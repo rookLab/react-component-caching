@@ -18,9 +18,8 @@ export default class App extends Component {
             <div>
                 <h1>THIS IS AN APP</h1>
                 <Button />
-                <BlogPost  />
-                <BlogPost   />
-                
+                <BlogPost />
+                <BlogPost />   
                 <List />
                 
             </div>
