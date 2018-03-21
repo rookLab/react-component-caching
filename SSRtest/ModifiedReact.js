@@ -2713,7 +2713,7 @@ var ReactMarkupReadableStream = function (_Readable) {
  */
 
 
-function renderToNodeStream(element, cache, streamingStart, memLife=0) {
+function originalRenderToNodeStream(element, cache, streamingStart, memLife=0) {
       return new ReactMarkupReadableStream(
         element,
         false,
@@ -2728,7 +2728,7 @@ function renderToNodeStream(element, cache, streamingStart, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element, cache, streamingStart, memLife=0) {
+function originalRenderToStaticNodeStream(element, cache, streamingStart, memLife=0) {
   return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
@@ -2806,7 +2806,51 @@ class ComponentCache {
   }
 
 }  
-  
+
+function renderToNodeStream(compo, cache, res, htmlSt, htmlEn){
+
+  const htmlStart = htmlSt;
+  // '<html><head><title>Page</title></head><body><div id="react-root">';
+
+  const htmlEnd = htmlEn;
+  // "</div></body></html>";
+
+  const streamingStart = {
+    sliceStartCount: htmlStart.length, 
+  }
+
+  const cacheStream = createCacheStream(cache, streamingStart);
+    cacheStream.pipe(res);
+    cacheStream.write(htmlStart);
+
+    const stream = originalRenderToNodeStream(compo, cache, streamingStart);
+    stream.pipe(cacheStream, { end: false });
+    stream.on("end", () => {
+      cacheStream.end(htmlEnd);
+    });
+}
+
+function renderToStaticNodeStream(compo, cache, res, htmlSt, htmlEn){
+  const htmlStart = htmlSt;
+  // '<html><head><title>Page</title></head><body><div id="react-root">';
+
+  const htmlEnd = htmlEn;
+  // "</div></body></html>";
+
+  const streamingStart = {
+    sliceStartCount: htmlStart.length, 
+  }
+
+  const cacheStream = createCacheStream(cache, streamingStart);
+    cacheStream.pipe(res);
+    cacheStream.write(htmlStart);
+
+    const stream = originalRenderToStaticNodeStream(compo, cache, streamingStart);
+    stream.pipe(cacheStream, { end: false });
+    stream.on("end", () => {
+      cacheStream.end(htmlEnd);
+    });
+}
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
 var ReactDOMServerNode = {
   renderToString: renderToString,
@@ -2814,7 +2858,7 @@ var ReactDOMServerNode = {
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
   ComponentCache: ComponentCache,
-  createCacheStream: createCacheStream,
+  // createCacheStream: createCacheStream,
   version: ReactVersion
 };
 
