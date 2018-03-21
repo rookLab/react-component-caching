@@ -60,7 +60,7 @@ export default class App extends Component {
 // ...
 ```
 ## Streaming HTML Markup
-To use streaming on the server side, use either the renderToStaticNodeStream or renderToNodeStream. Both streaming option works with caching, but not yet compatible with templatization. To use the streaming functions, simply pass in these 5 arguments:
+To use streaming on the server side, use either the renderToStaticNodeStream or renderToNodeStream function. Both streaming option works with caching, but not yet compatible with templatization. To use the streaming functions, simply pass in these 5 arguments:
 (
 `component`: The React component being rendered
 `cache`: The component cache object
