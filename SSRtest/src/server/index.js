@@ -1,7 +1,7 @@
 import React from 'react';
 // import ReactCC from '../../developmentBuild';
-// import ReactCC from '../../productionBuild';
-import ReactCC from 'react-dom/server'
+import ReactCC from '../../productionBuild';
+// import ReactCC from 'react-dom/server'
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
 // import nodeStream from "./nodeStream.js";
@@ -30,18 +30,18 @@ import App from '../shared/App';
  */
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
-  if(true){
-    let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+  // if(true){
+  //   let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
 
-    let htmlEnd =  "</div></body></html>";
+  //   let htmlEnd =  "</div></body></html>";
 
-    ReactCC.renderToNodeStream(<App/>, cache, res, htmlStart, htmlEnd); 
-    // const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
-    // cacheStream.pipe(res);
-    // cacheStream.write(htmlStart);
+  //   ReactCC.renderToNodeStream(<App/>, cache, res, htmlStart, htmlEnd); 
+  //   // const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
+  //   // cacheStream.pipe(res);
+  //   // cacheStream.write(htmlStart);
 
-  }
-  else if (false){
+  // }
+  // else if (false){
     const app = <App />;
     const start_cached = process.hrtime();
     
@@ -61,6 +61,6 @@ export default ({ clientStats }) => async (req, res) => {
       styles,
       cssHash
     });
-  }
+  // }
     
 };
