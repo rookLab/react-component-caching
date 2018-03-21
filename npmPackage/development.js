@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2013-present, Facebook, Inc.
  *
- * Portions of this source code are licensed under the MIT license found in the
+ * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
@@ -27,6 +27,7 @@ var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
 var lru = require('lru-cache');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -403,6 +404,20 @@ injection.injectDOMPropertyConfig(SVGDOMPropertyConfig);
 // TODO: this is special because it gets imported during build.
 
 var ReactVersion = '16.2.0';
+
+function __async(g) {
+  return new Promise(function (s, j) {
+    function c(a, x) {
+      try {
+        var r = g[x ? "throw" : "next"](a);
+      } catch (e) {
+        j(e);return;
+      }r.done ? s(r.value) : Promise.resolve(r.value).then(c, d);
+    }function d(e) {
+      c(e, 1);
+    }c();
+  });
+}
 
 var describeComponentFrame = function (name, source, ownerName) {
   return '\n    in ' + (name || 'Unknown') + (source ? ' (at ' + source.fileName.replace(/^.*[\\\/]/, '') + ':' + source.lineNumber + ')' : ownerName ? ' (created by ' + ownerName + ')' : '');
@@ -1790,7 +1805,7 @@ function validateProperties$2(type, props, canUseEventSystem) {
   warnUnknownProperties(type, props, canUseEventSystem);
 }
 
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+function _classCallCheck$1(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 // Based on reading the React.Children implementation. TODO: type this somewhere?
 
@@ -2179,7 +2194,7 @@ function resolve(child, context) {
 
 var ReactDOMServerRenderer = function () {
   function ReactDOMServerRenderer(children, makeStaticMarkup) {
-    _classCallCheck(this, ReactDOMServerRenderer);
+    _classCallCheck$1(this, ReactDOMServerRenderer);
 
     var flatChildren = flattenTopLevelChildren(children);
 
@@ -2204,11 +2219,32 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
-    const start = {};
+  ReactDOMServerRenderer.prototype.read = function read(bytes, cache, isStreaming, streamingStart, memLife) {return __async(function*(){
+    /* 
+      --- Component caching variables ---
+      start: Tracks start index in output string and templatization data for cached components
+      saveTemplates: Tracks templatized components so props can be restored in output string
+      loadedTemplates: Stores templates that have already been fetched from the cache so that the same template is not fetched several times
+      restoreProps: Restores actual props to a templatized component
+      getAsync: Convert asynchronous get method into a promise
+    */
+    var start = {};
+    var saveTemplates = [];
+    var loadedTemplates = {};
+    var restoreProps = function (template, props, lookup) {
+      return template.replace(/\{\{[0-9]+\}\}/g, function (match) {
+        return props[lookup[match]];
+      });
+    };
+    var getAsync = promisify(cache.get).bind(cache);
+
+    /*
+      --- Begin React 16 source code with addition of component caching logic ---
+    */
     if (this.exhausted) {
       return null;
     }
+
     var out = '';
     while (out.length < bytes) {
       if (this.stack.length === 0) {
@@ -2228,22 +2264,85 @@ var ReactDOMServerRenderer = function () {
         }
         continue;
       }
-
       var child = frame.children[frame.childIndex++];
       {
         setCurrentDebugStack(this.stack);
       }
 
-      // IF THE CHILD HAS A CACHEKEY PROPERTY ON IT
-      if(child.props.cache){
-        const cacheKey = child.type.name + JSON.stringify(child.props);
-        if (!cache.storage.get(cacheKey)){
-          start[cacheKey] = out.length;
-          out += this.render(child, frame.context, frame.domNamespace);
+      /* 
+        --- Component caching logic ---
+      */
+      if (child.props && child.props.cache) {
+        var cacheKey;
+        var isTemplate = child.props.templatized ? true : false;
+        var lookup;
+        var modifiedChild;
+        var realProps;
+
+        if (isTemplate) {
+          // Generate templatized version of props to generate appropriate cache key
+          var cacheProps = _assign({}, child.props);
+          var templatizedProps = child.props.templatized;
+          lookup = {};
+
+          if (typeof templatizedProps === 'string') templatizedProps = [templatizedProps];
+
+          // Generate template placeholders and lookup object for referencing prop names from placeholders
+          templatizedProps.forEach(function (templatizedProp, index) {
+            var placeholder = '{{' + index + '}}';
+            cacheProps[templatizedProp] = placeholder;
+            lookup[placeholder] = templatizedProp; // Move down to next if statement? (Extra work/space if not generating template)
+          });
+
+          cacheKey = child.type.name + JSON.stringify(cacheProps);
+
+          // Generate modified child with placeholder props to render template
+          if (!start[cacheKey]) {
+            modifiedChild = _assign({}, child);
+            modifiedChild.props = cacheProps;
+            realProps = child.props;
+          }
         } else {
-          out += cache.storage.get(cacheKey);
+          // Generate cache key for non-templatized component from its name and props
+          cacheKey = child.type.name + JSON.stringify(child.props);
         }
+        if (memLife) {
+          cacheKey = cacheKey.replace(/\s+/g, '|');
+        }
+        var rendered;
+        var restoredTemplate;
+
+        if (isTemplate && loadedTemplates[cacheKey]) {
+          // Component found in loaded templates
+          restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
+        } else {
+          rendered = yield getAsync(cacheKey);
+          if (!rendered) {
+            // Component not found in cache
+            // If templatized component and template hasn't been generated, render a template
+            if (!start[cacheKey] && isTemplate) {
+              rendered = this.render(modifiedChild, frame.context, frame.domNamespace);
+              start[cacheKey] = { startIndex: out.length, realProps: realProps, lookup: lookup };
+            }
+            // Otherwise, render with actual props
+            else rendered = this.render(child, frame.context, frame.domNamespace);
+
+            // For simple (non-template) caching, save start index of component in output string
+            if (!isTemplate) {
+              if (isStreaming) {
+                // streamingStart[cacheKey] = out.length;
+                streamingStart[cacheKey] = streamingStart.sliceStartCount + out.length;
+              } else start[cacheKey] = out.length;
+            }
+            // Component found in cache, and is templated
+          } else if (isTemplate) {
+            restoredTemplate = restoreProps(rendered, realProps, lookup);
+            loadedTemplates[cacheKey] = rendered;
+          }
+        }
+        out += restoredTemplate ? restoredTemplate : rendered;
       } else {
+        // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
@@ -2252,28 +2351,62 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
-    for (let component in start) {
-      let tagStack = [];
-      let tagStart;
-      let tagEnd;
+    /*
+      --- After initial render of cacheable components, recover from output string and store in cache ---
+    */
+    if (!isStreaming) {
+      for (var component in start) {
+        var tagStack = [];
+        var tagStart;
+        var tagEnd;
+        var componentStart = typeof start[component] === 'object' ? start[component].startIndex : start[component];
 
-      do {
-        if (!tagStart) tagStart = start[component];
-        else tagStart = (out[tagEnd] === '<') ? tagEnd : out.indexOf('<', tagEnd)
-        tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements
-        if (out[tagEnd - 2] !== '/') {
-          // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));
-          else tagStack.pop();
+        do {
+          if (!tagStart) tagStart = componentStart;else tagStart = out[tagEnd] === '<' ? tagEnd : out.indexOf('<', tagEnd);
+          tagEnd = out.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          // Note: Does not account for tags inside HTML comments
+          if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // Cache component by slicing 'out'
+        var cachedComponent = out.slice(componentStart, tagEnd);
+        if (typeof start[component] === 'object') {
+          saveTemplates.push(start[component]);
+          start[component].endIndex = tagEnd;
         }
-      } while (tagStack.length !== 0);
+        if (memLife) {
+          cache.set(component, cachedComponent, memLife, function (err) {
+            if (err) console.log(err);
+          });
+        } else {
+          cache.set(component, cachedComponent);
+        }
+      }
 
-      // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
+      // After caching all cacheable components, restore props to templates
+      if (saveTemplates) {
+        var outCopy = out;
+        out = '';
+        var bookmark = 0;
+        saveTemplates.sort(function (a, b) {
+          return a.startIndex - b.startIndex;
+        });
+        // Rebuild output string with actual props
+        saveTemplates.forEach(function (savedTemplate) {
+          out += outCopy.substring(bookmark, savedTemplate.startIndex);
+          bookmark = savedTemplate.endIndex;
+          out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), savedTemplate.realProps, savedTemplate.lookup);
+        });
+        out += outCopy.substring(bookmark, outCopy.length);
+      }
+    } else {
+      streamingStart.sliceStartCount += out.length;
     }
     return out;
-  };
+  }.call(this))};
 
   ReactDOMServerRenderer.prototype.render = function render(child, context, parentNamespace) {
     if (typeof child === 'string' || typeof child === 'number') {
@@ -2291,7 +2424,9 @@ var ReactDOMServerRenderer = function () {
       return escapeTextForBrowser(text);
     } else {
       var nextChild;
+
       var _resolve = resolve(child, context);
+
       nextChild = _resolve.child;
       context = _resolve.context;
 
@@ -2529,24 +2664,29 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+function renderToString(element, cache) {return __async(function*(argument$){
+  var memLife = argument$.length > 2 && argument$[2] !== undefined ? argument$[2] : 0;
+
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
+  var markup = yield renderer.read(Infinity, cache, false, null, memLife);
   return markup;
-}
+}(arguments))}
 
 /**
  * Similar to renderToString, except this doesn't create extra DOM attributes
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element) {
-  var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity);
-  return markup;
-}
+function renderToStaticMarkup(element, cache) {return __async(function*(argument$){
+  var memLife = argument$.length > 2 && argument$[2] !== undefined ? argument$[2] : 0;
 
-function _classCallCheck$1(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+  var renderer = new ReactDOMServerRenderer(element, true);
+  var markup = yield renderer.read(Infinity, cache, false, null, memLife);
+  return markup;
+}(arguments))}
+
+function _classCallCheck$2(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
 
@@ -2557,25 +2697,29 @@ function _inherits(subClass, superClass) { if (typeof superClass !== "function" 
 var ReactMarkupReadableStream = function (_Readable) {
   _inherits(ReactMarkupReadableStream, _Readable);
 
-  function ReactMarkupReadableStream(element, makeStaticMarkup) {
-    _classCallCheck$1(this, ReactMarkupReadableStream);
+  function ReactMarkupReadableStream(element, makeStaticMarkup, cache, streamingStart, memLife) {
+    _classCallCheck$2(this, ReactMarkupReadableStream);
 
     var _this = _possibleConstructorReturn(this, _Readable.call(this, {}));
     // Calls the stream.Readable(options) constructor. Consider exposing built-in
     // features like highWaterMark in the future.
 
 
+    _this.cache = cache;
+    _this.streamingStart = streamingStart;
+    _this.memLife = memLife;
     _this.partialRenderer = new ReactDOMServerRenderer(element, makeStaticMarkup);
     return _this;
   }
 
-  ReactMarkupReadableStream.prototype._read = function _read(size) {
+  ReactMarkupReadableStream.prototype._read = function _read(size) {return __async(function*(){
     try {
-      this.push(this.partialRenderer.read(size));
+      var readOutput = yield this.partialRenderer.read(size, this.cache, true, this.streamingStart, this.memLife);
+      this.push(readOutput);
     } catch (err) {
       this.emit('error', err);
     }
-  };
+  }.call(this))};
 
   return ReactMarkupReadableStream;
 }(stream.Readable);
@@ -2586,39 +2730,60 @@ var ReactMarkupReadableStream = function (_Readable) {
  */
 
 
-function renderToNodeStream(element) {
-  return new ReactMarkupReadableStream(element, false);
-}
+function renderToNodeStream(element, cache, streamingStart) {return __async(function*(argument$){
+  var memLife = argument$.length > 3 && argument$[3] !== undefined ? argument$[3] : 0;
+
+  return new ReactMarkupReadableStream(element, false, cache, streamingStart, memLife);
+}(arguments))}
 
 /**
  * Similar to renderToNodeStream, except this doesn't create extra DOM attributes
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element) {
-  return new ReactMarkupReadableStream(element, true);
+function renderToStaticNodeStream(element, cache, streamingStart) {
+  var memLife = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
+
+  return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
-class ComponentCache {
-  constructor(config = {}) {
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-		if (Number.isInteger(config)) {
-			config = {
-				max:config
-			};
+var ComponentCache = function () {
+  function ComponentCache() {
+    var config = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+    _classCallCheck(this, ComponentCache);
+
+    if (Number.isInteger(config)) {
+      config = {
+        max: config
+      };
     }
-    
-		this.storage = lru({
-			max: config.max || 1000000000,
-			length: (n, key) => {
-				return n.length + key.length;
-			}
-		});
 
+    this.storage = lru({
+      max: config.max || 1000000000,
+      length: function (n, key) {
+        return n.length + key.length;
+      }
+    });
   }
-}  
-  
+
+  ComponentCache.prototype.get = function get(cacheKey, cb) {
+    var reply = this.storage.get(cacheKey);
+    cb(null, reply);
+  };
+
+  ComponentCache.prototype.set = function set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
+  };
+
+  return ComponentCache;
+}();
+
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
+
+
 var ReactDOMServerNode = {
   renderToString: renderToString,
   renderToStaticMarkup: renderToStaticMarkup,

@@ -26,6 +26,7 @@ var warning = require('fbjs/lib/warning');
 var checkPropTypes = require('prop-types/checkPropTypes');
 var camelizeStyleName = require('fbjs/lib/camelizeStyleName');
 var stream = require('stream');
+var {promisify} = require('util');
 
 /**
  * WARNING: DO NOT manually require this module.
@@ -1789,7 +1790,7 @@ function validateProperties$2(type, props, canUseEventSystem) {
   warnUnknownProperties(type, props, canUseEventSystem);
 }
 
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+function _classCallCheck$1(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 // Based on reading the React.Children implementation. TODO: type this somewhere?
 
@@ -2178,7 +2179,7 @@ function resolve(child, context) {
 
 var ReactDOMServerRenderer = function () {
   function ReactDOMServerRenderer(children, makeStaticMarkup) {
-    _classCallCheck(this, ReactDOMServerRenderer);
+    _classCallCheck$1(this, ReactDOMServerRenderer);
 
     var flatChildren = flattenTopLevelChildren(children);
 
@@ -2203,8 +2204,28 @@ var ReactDOMServerRenderer = function () {
   // TODO: type this more strictly:
 
 
-  ReactDOMServerRenderer.prototype.read = function read(bytes, cache) {
+  ReactDOMServerRenderer.prototype.read = async function read(bytes, cache, isStreaming, streamingStart, memLife) {
+    /* 
+      --- Component caching variables ---
+      start: Tracks start index in output string and templatization data for cached components
+      saveTemplates: Tracks templatized components so props can be restored in output string
+      loadedTemplates: Stores templates that have already been fetched from the cache so that the same template is not fetched several times
+      restoreProps: Restores actual props to a templatized component
+      getAsync: Convert asynchronous get method into a promise
+    */
     var start = {};
+    var saveTemplates = [];
+    var loadedTemplates = {};
+    var restoreProps = function (template, props, lookup) {
+      return template.replace(/\{\{[0-9]+\}\}/g, function (match) {
+        return props[lookup[match]];
+      });
+    };
+    var getAsync = promisify(cache.get).bind(cache);
+
+    /*
+      --- Begin React 16 source code with addition of component caching logic ---
+    */
     if (this.exhausted) {
       return null;
     }
@@ -2232,14 +2253,86 @@ var ReactDOMServerRenderer = function () {
       {
         setCurrentDebugStack(this.stack);
       }
-      if (child.props.cacheKey) {
-        if (!cache.storage.get(child.props.cacheKey)) {
-          start[child.props.cacheKey] = out.length;
-          out += this.render(child, frame.context, frame.domNamespace);
+
+      /* 
+        --- Component caching logic ---
+      */
+      if (child.props && child.props.cache) {
+        var cacheKey;
+        var isTemplate = child.props.templatized ? true : false;
+        var lookup;
+        var modifiedChild;
+        var realProps;
+
+        if (isTemplate) {
+          // Generate templatized version of props to generate appropriate cache key
+          var cacheProps = _assign({}, child.props);
+          var templatizedProps = child.props.templatized;
+          lookup = {};
+
+          if (typeof templatizedProps === 'string') {
+            templatizedProps = [templatizedProps];
+          }
+
+          // Generate template placeholders and lookup object for referencing prop names from placeholders
+          templatizedProps.forEach(function (templatizedProp, index) {
+            var placeholder = '{{' + index + '}}';
+            cacheProps[templatizedProp] = placeholder;
+            lookup[placeholder] = templatizedProp; // Move down to next if statement? (Extra work/space if not generating template)
+          });
+
+          cacheKey = child.type.name + JSON.stringify(cacheProps);
+
+          // Generate modified child with placeholder props to render template
+          if (!start[cacheKey]) {
+            modifiedChild = _assign({}, child);
+            modifiedChild.props = cacheProps;
+            realProps = child.props;
+          }
         } else {
-          out += cache.storage.get(child.props.cacheKey);
+          // Generate cache key for non-templatized component from its name and props
+          cacheKey = child.type.name + JSON.stringify(child.props);
         }
+        if (memLife) {
+          cacheKey = cacheKey.replace(/\s+/g, '|');
+        }
+        var rendered;
+        var restoredTemplate;
+
+        if (isTemplate && loadedTemplates[cacheKey]) {
+          // Component found in loaded templates
+          restoredTemplate = restoreProps(loadedTemplates[cacheKey], realProps, lookup);
+        } else {
+          rendered = await getAsync(cacheKey);
+          if (!rendered) {
+            // Component not found in cache
+            // If templatized component and template hasn't been generated, render a template
+            if (!start[cacheKey] && isTemplate) {
+              rendered = this.render(modifiedChild, frame.context, frame.domNamespace);
+              start[cacheKey] = { startIndex: out.length, realProps: realProps, lookup: lookup };
+            } else {
+              // Otherwise, render with actual props
+              rendered = this.render(child, frame.context, frame.domNamespace);
+            }
+
+            // For simple (non-template) caching, save start index of component in output string
+            if (!isTemplate) {
+              if (isStreaming) {
+                // streamingStart[cacheKey] = out.length;
+                streamingStart[cacheKey] = streamingStart.sliceStartCount + out.length;
+              } else {
+                start[cacheKey] = out.length;
+              }
+            }
+            // Component found in cache, and is templated
+          } else if (isTemplate) {
+            restoredTemplate = restoreProps(rendered, realProps, lookup);
+            loadedTemplates[cacheKey] = rendered;
+          }
+        }
+        out += restoredTemplate ? restoredTemplate : rendered;
       } else {
+        // Normal rendering for non-cached components
         out += this.render(child, frame.context, frame.domNamespace);
       }
       {
@@ -2248,24 +2341,69 @@ var ReactDOMServerRenderer = function () {
       }
     }
 
-    for (var component in start) {
-      var tagStack = [];
-      var tagStart = void 0;
-      var tagEnd = void 0;
+    /*
+      --- After initial render of cacheable components, recover from output string and store in cache ---
+    */
+    if (!isStreaming) {
+      for (var component in start) {
+        var tagStack = [];
+        var tagStart = void 0;
+        var tagEnd = void 0;
+        var componentStart = typeof start[component] === 'object' ? start[component].startIndex : start[component];
 
-      do {
-        if (!tagStart) tagStart = start[component];else tagStart = out[tagEnd] === '<' ? tagEnd : out.indexOf('<', tagEnd);
-        tagEnd = out.indexOf('>', tagStart) + 1;
-        // Skip stack logic for void/self-closing elements
-        if (out[tagEnd - 2] !== '/') {
-          // Push opening tags onto stack; pop closing tags off of stack
-          if (out[tagStart + 1] !== '/') tagStack.push(out.slice(tagStart, tagEnd));else tagStack.pop();
+        do {
+          if (!tagStart) {
+            tagStart = componentStart;
+          } else {
+            tagStart = out[tagEnd] === '<' ? tagEnd : out.indexOf('<', tagEnd);
+          }
+          tagEnd = out.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          // Note: Does not account for tags inside HTML comments
+          if (out[tagEnd - 2] !== '/' && out[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (out[tagStart + 1] !== '/') {
+              tagStack.push(out.slice(tagStart, tagEnd));
+            } else {
+              tagStack.pop();
+            }
+          }
+        } while (tagStack.length !== 0);
+        // Cache component by slicing 'out'
+        var cachedComponent = out.slice(componentStart, tagEnd);
+        if (typeof start[component] === 'object') {
+          saveTemplates.push(start[component]);
+          start[component].endIndex = tagEnd;
         }
-      } while (tagStack.length !== 0);
+        if (memLife) {
+          cache.set(component, cachedComponent, memLife, function (err) {
+            if (err) {
+              console.log(err);
+            }
+          });
+        } else {
+          cache.set(component, cachedComponent);
+        }
+      }
 
-      // cache component by slicing 'out'
-      cache.storage.set(component, out.slice(start[component], tagEnd));
-      console.log(cache);
+      // After caching all cacheable components, restore props to templates
+      if (saveTemplates) {
+        var outCopy = out;
+        out = '';
+        var bookmark = 0;
+        saveTemplates.sort(function (a, b) {
+          return a.startIndex - b.startIndex;
+        });
+        // Rebuild output string with actual props
+        saveTemplates.forEach(function (savedTemplate) {
+          out += outCopy.substring(bookmark, savedTemplate.startIndex);
+          bookmark = savedTemplate.endIndex;
+          out += restoreProps(outCopy.slice(savedTemplate.startIndex, savedTemplate.endIndex), savedTemplate.realProps, savedTemplate.lookup);
+        });
+        out += outCopy.substring(bookmark, outCopy.length);
+      }
+    } else {
+      streamingStart.sliceStartCount += out.length;
     }
     return out;
   };
@@ -2526,9 +2664,12 @@ var ReactDOMServerRenderer = function () {
  * server.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostring
  */
-function renderToString(element, cache) {
+async function renderToString(element, cache) {
+  var memLife = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+
+  // If and only if using memcached, pass the lifetime of your cache entry (in seconds) into 'memLife'.
   var renderer = new ReactDOMServerRenderer(element, false);
-  var markup = renderer.read(Infinity, cache);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
@@ -2537,13 +2678,15 @@ function renderToString(element, cache) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element) {
+async function renderToStaticMarkup(element, cache) {
+  var memLife = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
-function _classCallCheck$1(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+function _classCallCheck$2(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
 
@@ -2554,21 +2697,25 @@ function _inherits(subClass, superClass) { if (typeof superClass !== "function" 
 var ReactMarkupReadableStream = function (_Readable) {
   _inherits(ReactMarkupReadableStream, _Readable);
 
-  function ReactMarkupReadableStream(element, makeStaticMarkup) {
-    _classCallCheck$1(this, ReactMarkupReadableStream);
+  function ReactMarkupReadableStream(element, makeStaticMarkup, cache, streamingStart, memLife) {
+    _classCallCheck$2(this, ReactMarkupReadableStream);
 
     var _this = _possibleConstructorReturn(this, _Readable.call(this, {}));
     // Calls the stream.Readable(options) constructor. Consider exposing built-in
     // features like highWaterMark in the future.
 
 
+    _this.cache = cache;
+    _this.streamingStart = streamingStart;
+    _this.memLife = memLife;
     _this.partialRenderer = new ReactDOMServerRenderer(element, makeStaticMarkup);
     return _this;
   }
 
-  ReactMarkupReadableStream.prototype._read = function _read(size) {
+  ReactMarkupReadableStream.prototype._read = async function _read(size) {
     try {
-      this.push(this.partialRenderer.read(size));
+      var readOutput = await this.partialRenderer.read(size, this.cache, true, this.streamingStart, this.memLife);
+      this.push(readOutput);
     } catch (err) {
       this.emit('error', err);
     }
@@ -2576,15 +2723,84 @@ var ReactMarkupReadableStream = function (_Readable) {
 
   return ReactMarkupReadableStream;
 }(stream.Readable);
+
+function createCacheStream(cache, streamingStart) {
+  var memLife = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+
+  var bufferedChunks = [];
+  return new stream.Transform({
+    // transform() is called with each chunk of data
+    transform: function (data, enc, cb) {
+      // We store the chunk of data (which is a Buffer) in memory
+      bufferedChunks.push(data);
+      // Then pass the data unchanged onwards to the next stream
+      cb(null, data);
+    },
+
+
+    // flush() is called when everything is done
+    flush: function (cb) {
+      // We concatenate all the buffered chunks of HTML to get the full HTML, then cache it at "key"
+      var html = bufferedChunks.join("");
+      delete streamingStart.sliceStartCount;
+
+      for (var component in streamingStart) {
+        var tagStack = [];
+        var tagStart = void 0;
+        var tagEnd = void 0;
+
+        do {
+          if (!tagStart) tagStart = streamingStart[component];else tagStart = html[tagEnd] === '<' ? tagEnd : html.indexOf('<', tagEnd);
+          tagEnd = html.indexOf('>', tagStart) + 1;
+          // Skip stack logic for void/self-closing elements and HTML comments 
+          if (html[tagEnd - 2] !== '/' && html[tagStart + 1] !== '!') {
+            // Push opening tags onto stack; pop closing tags off of stack
+            if (html[tagStart + 1] !== '/') tagStack.push(html.slice(tagStart, tagEnd));else tagStack.pop();
+          }
+        } while (tagStack.length !== 0);
+        // cache component by slicing 'html'
+        if (memLife) {
+          cache.set(component, html.slice(streamingStart[component], tagEnd), memLife, function (err) {
+            if (err) console.log(err);
+          });
+        } else {
+          cache.set(component, html.slice(streamingStart[component], tagEnd));
+        }
+      }
+      cb();
+    }
+  });
+}
 /**
  * Render a ReactElement to its initial HTML. This should only be used on the
  * server.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertonodestream
  */
+function originalRenderToNodeStream(element, cache, streamingStart) {
+  var memLife = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
 
+  return new ReactMarkupReadableStream(element, false, cache, streamingStart, memLife);
+}
 
-function renderToNodeStream(element) {
-  return new ReactMarkupReadableStream(element, false);
+function renderToNodeStream(compo, cache, res) {
+
+  var htmlStart = '<html><head><title>Page</title></head><body><div id="react-root">';
+
+  var htmlEnd = '</div></body></html>';
+
+  var streamingStart = {
+    sliceStartCount: htmlStart.length
+  };
+
+  var cacheStream = createCacheStream(cache, streamingStart);
+  cacheStream.pipe(res);
+  cacheStream.write(htmlStart);
+
+  var stream$$1 = originalRenderToNodeStream(compo, cache, streamingStart);
+  stream$$1.pipe(cacheStream, { end: false });
+  stream$$1.on("end", function () {
+    cacheStream.end(htmlEnd);
+  });
 }
 
 /**
@@ -2592,16 +2808,1894 @@ function renderToNodeStream(element) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-stream.html#rendertostaticnodestream
  */
-function renderToStaticNodeStream(element) {
-  return new ReactMarkupReadableStream(element, true);
+function renderToStaticNodeStream(element, cache, streamingStart) {
+  var memLife = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
+
+  return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
+function createCommonjsModule(fn, module) {
+	return module = { exports: {} }, fn(module, module.exports), module.exports;
+}
+
+var hasOwnProperty$2 = Object.prototype.hasOwnProperty;
+
+var pseudomap = PseudoMap;
+
+function PseudoMap (set) {
+  if (!(this instanceof PseudoMap)) // whyyyyyyy
+    throw new TypeError("Constructor PseudoMap requires 'new'")
+
+  this.clear();
+
+  if (set) {
+    if ((set instanceof PseudoMap) ||
+        (typeof Map === 'function' && set instanceof Map))
+      set.forEach(function (value, key) {
+        this.set(key, value);
+      }, this);
+    else if (Array.isArray(set))
+      set.forEach(function (kv) {
+        this.set(kv[0], kv[1]);
+      }, this);
+    else
+      throw new TypeError('invalid argument')
+  }
+}
+
+PseudoMap.prototype.forEach = function (fn, thisp) {
+  thisp = thisp || this;
+  Object.keys(this._data).forEach(function (k) {
+    if (k !== 'size')
+      fn.call(thisp, this._data[k].value, this._data[k].key);
+  }, this);
+};
+
+PseudoMap.prototype.has = function (k) {
+  return !!find(this._data, k)
+};
+
+PseudoMap.prototype.get = function (k) {
+  var res = find(this._data, k);
+  return res && res.value
+};
+
+PseudoMap.prototype.set = function (k, v) {
+  set(this._data, k, v);
+};
+
+PseudoMap.prototype.delete = function (k) {
+  var res = find(this._data, k);
+  if (res) {
+    delete this._data[res._index];
+    this._data.size--;
+  }
+};
+
+PseudoMap.prototype.clear = function () {
+  var data = Object.create(null);
+  data.size = 0;
+
+  Object.defineProperty(this, '_data', {
+    value: data,
+    enumerable: false,
+    configurable: true,
+    writable: false
+  });
+};
+
+Object.defineProperty(PseudoMap.prototype, 'size', {
+  get: function () {
+    return this._data.size
+  },
+  set: function (n) {},
+  enumerable: true,
+  configurable: true
+});
+
+PseudoMap.prototype.values =
+PseudoMap.prototype.keys =
+PseudoMap.prototype.entries = function () {
+  throw new Error('iterators are not implemented in this version')
+};
+
+// Either identical, or both NaN
+function same (a, b) {
+  return a === b || a !== a && b !== b
+}
+
+function Entry$1 (k, v, i) {
+  this.key = k;
+  this.value = v;
+  this._index = i;
+}
+
+function find (data, k) {
+  for (var i = 0, s = '_' + k, key = s;
+       hasOwnProperty$2.call(data, key);
+       key = s + i++) {
+    if (same(data[key].key, k))
+      return data[key]
+  }
+}
+
+function set (data, k, v) {
+  for (var i = 0, s = '_' + k, key = s;
+       hasOwnProperty$2.call(data, key);
+       key = s + i++) {
+    if (same(data[key].key, k)) {
+      data[key].value = v;
+      return
+    }
+  }
+  data.size++;
+  data[key] = new Entry$1(k, v, key);
+}
+
+var map = createCommonjsModule(function (module) {
+if (process.env.npm_package_name === 'pseudomap' &&
+    process.env.npm_lifecycle_script === 'test')
+  process.env.TEST_PSEUDOMAP = 'true';
+
+if (typeof Map === 'function' && !process.env.TEST_PSEUDOMAP) {
+  module.exports = Map;
+} else {
+  module.exports = pseudomap;
+}
+});
+
+// shim for using process in browser
+// based off https://github.com/defunctzombie/node-process/blob/master/browser.js
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+var cachedSetTimeout = defaultSetTimout;
+var cachedClearTimeout = defaultClearTimeout;
+if (typeof global.setTimeout === 'function') {
+    cachedSetTimeout = setTimeout;
+}
+if (typeof global.clearTimeout === 'function') {
+    cachedClearTimeout = clearTimeout;
+}
+
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+function nextTick(fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+}
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+var title = 'browser';
+var platform = 'browser';
+var browser = true;
+var env = {};
+var argv = [];
+var version = ''; // empty string to avoid regexp issues
+var versions = {};
+var release = {};
+var config = {};
+
+function noop() {}
+
+var on = noop;
+var addListener = noop;
+var once = noop;
+var off = noop;
+var removeListener = noop;
+var removeAllListeners = noop;
+var emit = noop;
+
+function binding(name) {
+    throw new Error('process.binding is not supported');
+}
+
+function cwd () { return '/' }
+function chdir (dir) {
+    throw new Error('process.chdir is not supported');
+}
+function umask() { return 0; }
+
+// from https://github.com/kumavis/browser-process-hrtime/blob/master/index.js
+var performance = global.performance || {};
+var performanceNow =
+  performance.now        ||
+  performance.mozNow     ||
+  performance.msNow      ||
+  performance.oNow       ||
+  performance.webkitNow  ||
+  function(){ return (new Date()).getTime() };
+
+// generate timestamp or delta
+// see http://nodejs.org/api/process.html#process_process_hrtime
+function hrtime(previousTimestamp){
+  var clocktime = performanceNow.call(performance)*1e-3;
+  var seconds = Math.floor(clocktime);
+  var nanoseconds = Math.floor((clocktime%1)*1e9);
+  if (previousTimestamp) {
+    seconds = seconds - previousTimestamp[0];
+    nanoseconds = nanoseconds - previousTimestamp[1];
+    if (nanoseconds<0) {
+      seconds--;
+      nanoseconds += 1e9;
+    }
+  }
+  return [seconds,nanoseconds]
+}
+
+var startTime = new Date();
+function uptime() {
+  var currentTime = new Date();
+  var dif = currentTime - startTime;
+  return dif / 1000;
+}
+
+var process$1 = {
+  nextTick: nextTick,
+  title: title,
+  browser: browser,
+  env: env,
+  argv: argv,
+  version: version,
+  versions: versions,
+  on: on,
+  addListener: addListener,
+  once: once,
+  off: off,
+  removeListener: removeListener,
+  removeAllListeners: removeAllListeners,
+  emit: emit,
+  binding: binding,
+  cwd: cwd,
+  chdir: chdir,
+  umask: umask,
+  hrtime: hrtime,
+  platform: platform,
+  release: release,
+  config: config,
+  uptime: uptime
+};
+
+var inherits;
+if (typeof Object.create === 'function'){
+  inherits = function inherits(ctor, superCtor) {
+    // implementation from standard node.js 'util' module
+    ctor.super_ = superCtor;
+    ctor.prototype = Object.create(superCtor.prototype, {
+      constructor: {
+        value: ctor,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      }
+    });
+  };
+} else {
+  inherits = function inherits(ctor, superCtor) {
+    ctor.super_ = superCtor;
+    var TempCtor = function () {};
+    TempCtor.prototype = superCtor.prototype;
+    ctor.prototype = new TempCtor();
+    ctor.prototype.constructor = ctor;
+  };
+}
+var inherits$1 = inherits;
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+var formatRegExp = /%[sdj%]/g;
+function format(f) {
+  if (!isString(f)) {
+    var objects = [];
+    for (var i = 0; i < arguments.length; i++) {
+      objects.push(inspect(arguments[i]));
+    }
+    return objects.join(' ');
+  }
+
+  var i = 1;
+  var args = arguments;
+  var len = args.length;
+  var str = String(f).replace(formatRegExp, function(x) {
+    if (x === '%%') return '%';
+    if (i >= len) return x;
+    switch (x) {
+      case '%s': return String(args[i++]);
+      case '%d': return Number(args[i++]);
+      case '%j':
+        try {
+          return JSON.stringify(args[i++]);
+        } catch (_) {
+          return '[Circular]';
+        }
+      default:
+        return x;
+    }
+  });
+  for (var x = args[i]; i < len; x = args[++i]) {
+    if (isNull(x) || !isObject(x)) {
+      str += ' ' + x;
+    } else {
+      str += ' ' + inspect(x);
+    }
+  }
+  return str;
+}
+
+
+// Mark that a method should not be used.
+// Returns a modified function which warns once by default.
+// If --no-deprecation is set, then it is a no-op.
+function deprecate(fn, msg) {
+  // Allow for deprecating things in the process of starting up.
+  if (isUndefined(global.process)) {
+    return function() {
+      return deprecate(fn, msg).apply(this, arguments);
+    };
+  }
+
+  if (process$1.noDeprecation === true) {
+    return fn;
+  }
+
+  var warned = false;
+  function deprecated() {
+    if (!warned) {
+      if (process$1.throwDeprecation) {
+        throw new Error(msg);
+      } else if (process$1.traceDeprecation) {
+        console.trace(msg);
+      } else {
+        console.error(msg);
+      }
+      warned = true;
+    }
+    return fn.apply(this, arguments);
+  }
+
+  return deprecated;
+}
+
+
+var debugs = {};
+var debugEnviron;
+function debuglog(set) {
+  if (isUndefined(debugEnviron))
+    debugEnviron = process$1.env.NODE_DEBUG || '';
+  set = set.toUpperCase();
+  if (!debugs[set]) {
+    if (new RegExp('\\b' + set + '\\b', 'i').test(debugEnviron)) {
+      var pid = 0;
+      debugs[set] = function() {
+        var msg = format.apply(null, arguments);
+        console.error('%s %d: %s', set, pid, msg);
+      };
+    } else {
+      debugs[set] = function() {};
+    }
+  }
+  return debugs[set];
+}
+
+
+/**
+ * Echos the value of a value. Trys to print the value out
+ * in the best way possible given the different types.
+ *
+ * @param {Object} obj The object to print out.
+ * @param {Object} opts Optional options object that alters the output.
+ */
+/* legacy: obj, showHidden, depth, colors*/
+function inspect(obj, opts) {
+  // default options
+  var ctx = {
+    seen: [],
+    stylize: stylizeNoColor
+  };
+  // legacy...
+  if (arguments.length >= 3) ctx.depth = arguments[2];
+  if (arguments.length >= 4) ctx.colors = arguments[3];
+  if (isBoolean(opts)) {
+    // legacy...
+    ctx.showHidden = opts;
+  } else if (opts) {
+    // got an "options" object
+    _extend(ctx, opts);
+  }
+  // set default options
+  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
+  if (isUndefined(ctx.depth)) ctx.depth = 2;
+  if (isUndefined(ctx.colors)) ctx.colors = false;
+  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
+  if (ctx.colors) ctx.stylize = stylizeWithColor;
+  return formatValue(ctx, obj, ctx.depth);
+}
+
+// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
+inspect.colors = {
+  'bold' : [1, 22],
+  'italic' : [3, 23],
+  'underline' : [4, 24],
+  'inverse' : [7, 27],
+  'white' : [37, 39],
+  'grey' : [90, 39],
+  'black' : [30, 39],
+  'blue' : [34, 39],
+  'cyan' : [36, 39],
+  'green' : [32, 39],
+  'magenta' : [35, 39],
+  'red' : [31, 39],
+  'yellow' : [33, 39]
+};
+
+// Don't use 'blue' not visible on cmd.exe
+inspect.styles = {
+  'special': 'cyan',
+  'number': 'yellow',
+  'boolean': 'yellow',
+  'undefined': 'grey',
+  'null': 'bold',
+  'string': 'green',
+  'date': 'magenta',
+  // "name": intentionally not styling
+  'regexp': 'red'
+};
+
+
+function stylizeWithColor(str, styleType) {
+  var style = inspect.styles[styleType];
+
+  if (style) {
+    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
+           '\u001b[' + inspect.colors[style][1] + 'm';
+  } else {
+    return str;
+  }
+}
+
+
+function stylizeNoColor(str, styleType) {
+  return str;
+}
+
+
+function arrayToHash(array) {
+  var hash = {};
+
+  array.forEach(function(val, idx) {
+    hash[val] = true;
+  });
+
+  return hash;
+}
+
+
+function formatValue(ctx, value, recurseTimes) {
+  // Provide a hook for user-specified inspect functions.
+  // Check that value is an object with an inspect function on it
+  if (ctx.customInspect &&
+      value &&
+      isFunction(value.inspect) &&
+      // Filter out the util module, it's inspect function is special
+      value.inspect !== inspect &&
+      // Also filter out any prototype objects using the circular check.
+      !(value.constructor && value.constructor.prototype === value)) {
+    var ret = value.inspect(recurseTimes, ctx);
+    if (!isString(ret)) {
+      ret = formatValue(ctx, ret, recurseTimes);
+    }
+    return ret;
+  }
+
+  // Primitive types cannot have properties
+  var primitive = formatPrimitive(ctx, value);
+  if (primitive) {
+    return primitive;
+  }
+
+  // Look up the keys of the object.
+  var keys = Object.keys(value);
+  var visibleKeys = arrayToHash(keys);
+
+  if (ctx.showHidden) {
+    keys = Object.getOwnPropertyNames(value);
+  }
+
+  // IE doesn't make error fields non-enumerable
+  // http://msdn.microsoft.com/en-us/library/ie/dww52sbt(v=vs.94).aspx
+  if (isError(value)
+      && (keys.indexOf('message') >= 0 || keys.indexOf('description') >= 0)) {
+    return formatError(value);
+  }
+
+  // Some type of object without properties can be shortcutted.
+  if (keys.length === 0) {
+    if (isFunction(value)) {
+      var name = value.name ? ': ' + value.name : '';
+      return ctx.stylize('[Function' + name + ']', 'special');
+    }
+    if (isRegExp(value)) {
+      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
+    }
+    if (isDate(value)) {
+      return ctx.stylize(Date.prototype.toString.call(value), 'date');
+    }
+    if (isError(value)) {
+      return formatError(value);
+    }
+  }
+
+  var base = '', array = false, braces = ['{', '}'];
+
+  // Make Array say that they are Array
+  if (isArray(value)) {
+    array = true;
+    braces = ['[', ']'];
+  }
+
+  // Make functions say that they are functions
+  if (isFunction(value)) {
+    var n = value.name ? ': ' + value.name : '';
+    base = ' [Function' + n + ']';
+  }
+
+  // Make RegExps say that they are RegExps
+  if (isRegExp(value)) {
+    base = ' ' + RegExp.prototype.toString.call(value);
+  }
+
+  // Make dates with properties first say the date
+  if (isDate(value)) {
+    base = ' ' + Date.prototype.toUTCString.call(value);
+  }
+
+  // Make error with message first say the error
+  if (isError(value)) {
+    base = ' ' + formatError(value);
+  }
+
+  if (keys.length === 0 && (!array || value.length == 0)) {
+    return braces[0] + base + braces[1];
+  }
+
+  if (recurseTimes < 0) {
+    if (isRegExp(value)) {
+      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
+    } else {
+      return ctx.stylize('[Object]', 'special');
+    }
+  }
+
+  ctx.seen.push(value);
+
+  var output;
+  if (array) {
+    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
+  } else {
+    output = keys.map(function(key) {
+      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
+    });
+  }
+
+  ctx.seen.pop();
+
+  return reduceToSingleString(output, base, braces);
+}
+
+
+function formatPrimitive(ctx, value) {
+  if (isUndefined(value))
+    return ctx.stylize('undefined', 'undefined');
+  if (isString(value)) {
+    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
+                                             .replace(/'/g, "\\'")
+                                             .replace(/\\"/g, '"') + '\'';
+    return ctx.stylize(simple, 'string');
+  }
+  if (isNumber(value))
+    return ctx.stylize('' + value, 'number');
+  if (isBoolean(value))
+    return ctx.stylize('' + value, 'boolean');
+  // For some reason typeof null is "object", so special case here.
+  if (isNull(value))
+    return ctx.stylize('null', 'null');
+}
+
+
+function formatError(value) {
+  return '[' + Error.prototype.toString.call(value) + ']';
+}
+
+
+function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
+  var output = [];
+  for (var i = 0, l = value.length; i < l; ++i) {
+    if (hasOwnProperty$3(value, String(i))) {
+      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
+          String(i), true));
+    } else {
+      output.push('');
+    }
+  }
+  keys.forEach(function(key) {
+    if (!key.match(/^\d+$/)) {
+      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
+          key, true));
+    }
+  });
+  return output;
+}
+
+
+function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
+  var name, str, desc;
+  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
+  if (desc.get) {
+    if (desc.set) {
+      str = ctx.stylize('[Getter/Setter]', 'special');
+    } else {
+      str = ctx.stylize('[Getter]', 'special');
+    }
+  } else {
+    if (desc.set) {
+      str = ctx.stylize('[Setter]', 'special');
+    }
+  }
+  if (!hasOwnProperty$3(visibleKeys, key)) {
+    name = '[' + key + ']';
+  }
+  if (!str) {
+    if (ctx.seen.indexOf(desc.value) < 0) {
+      if (isNull(recurseTimes)) {
+        str = formatValue(ctx, desc.value, null);
+      } else {
+        str = formatValue(ctx, desc.value, recurseTimes - 1);
+      }
+      if (str.indexOf('\n') > -1) {
+        if (array) {
+          str = str.split('\n').map(function(line) {
+            return '  ' + line;
+          }).join('\n').substr(2);
+        } else {
+          str = '\n' + str.split('\n').map(function(line) {
+            return '   ' + line;
+          }).join('\n');
+        }
+      }
+    } else {
+      str = ctx.stylize('[Circular]', 'special');
+    }
+  }
+  if (isUndefined(name)) {
+    if (array && key.match(/^\d+$/)) {
+      return str;
+    }
+    name = JSON.stringify('' + key);
+    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
+      name = name.substr(1, name.length - 2);
+      name = ctx.stylize(name, 'name');
+    } else {
+      name = name.replace(/'/g, "\\'")
+                 .replace(/\\"/g, '"')
+                 .replace(/(^"|"$)/g, "'");
+      name = ctx.stylize(name, 'string');
+    }
+  }
+
+  return name + ': ' + str;
+}
+
+
+function reduceToSingleString(output, base, braces) {
+  var numLinesEst = 0;
+  var length = output.reduce(function(prev, cur) {
+    numLinesEst++;
+    if (cur.indexOf('\n') >= 0) numLinesEst++;
+    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
+  }, 0);
+
+  if (length > 60) {
+    return braces[0] +
+           (base === '' ? '' : base + '\n ') +
+           ' ' +
+           output.join(',\n  ') +
+           ' ' +
+           braces[1];
+  }
+
+  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
+}
+
+
+// NOTE: These type checking functions intentionally don't use `instanceof`
+// because it is fragile and can be easily faked with `Object.create()`.
+function isArray(ar) {
+  return Array.isArray(ar);
+}
+
+function isBoolean(arg) {
+  return typeof arg === 'boolean';
+}
+
+function isNull(arg) {
+  return arg === null;
+}
+
+function isNullOrUndefined(arg) {
+  return arg == null;
+}
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+
+function isString(arg) {
+  return typeof arg === 'string';
+}
+
+function isSymbol(arg) {
+  return typeof arg === 'symbol';
+}
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+
+function isRegExp(re) {
+  return isObject(re) && objectToString(re) === '[object RegExp]';
+}
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+
+function isDate(d) {
+  return isObject(d) && objectToString(d) === '[object Date]';
+}
+
+function isError(e) {
+  return isObject(e) &&
+      (objectToString(e) === '[object Error]' || e instanceof Error);
+}
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+
+function isPrimitive(arg) {
+  return arg === null ||
+         typeof arg === 'boolean' ||
+         typeof arg === 'number' ||
+         typeof arg === 'string' ||
+         typeof arg === 'symbol' ||  // ES6 symbol
+         typeof arg === 'undefined';
+}
+
+function isBuffer(maybeBuf) {
+  return Buffer.isBuffer(maybeBuf);
+}
+
+function objectToString(o) {
+  return Object.prototype.toString.call(o);
+}
+
+
+function pad(n) {
+  return n < 10 ? '0' + n.toString(10) : n.toString(10);
+}
+
+
+var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
+              'Oct', 'Nov', 'Dec'];
+
+// 26 Feb 16:19:34
+function timestamp() {
+  var d = new Date();
+  var time = [pad(d.getHours()),
+              pad(d.getMinutes()),
+              pad(d.getSeconds())].join(':');
+  return [d.getDate(), months[d.getMonth()], time].join(' ');
+}
+
+
+// log is just a thin wrapper to console.log that prepends a timestamp
+function log() {
+  console.log('%s - %s', timestamp(), format.apply(null, arguments));
+}
+
+
+/**
+ * Inherit the prototype methods from one constructor into another.
+ *
+ * The Function.prototype.inherits from lang.js rewritten as a standalone
+ * function (not on Function.prototype). NOTE: If this file is to be loaded
+ * during bootstrapping this function needs to be rewritten using some native
+ * functions as prototype setup using normal JavaScript does not work as
+ * expected during bootstrapping (see mirror.js in r114903).
+ *
+ * @param {function} ctor Constructor function which needs to inherit the
+ *     prototype.
+ * @param {function} superCtor Constructor function to inherit prototype from.
+ */
+function _extend(origin, add) {
+  // Don't do anything if add isn't an object
+  if (!add || !isObject(add)) return origin;
+
+  var keys = Object.keys(add);
+  var i = keys.length;
+  while (i--) {
+    origin[keys[i]] = add[keys[i]];
+  }
+  return origin;
+}
+
+function hasOwnProperty$3(obj, prop) {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+var util = {
+  inherits: inherits$1,
+  _extend: _extend,
+  log: log,
+  isBuffer: isBuffer,
+  isPrimitive: isPrimitive,
+  isFunction: isFunction,
+  isError: isError,
+  isDate: isDate,
+  isObject: isObject,
+  isRegExp: isRegExp,
+  isUndefined: isUndefined,
+  isSymbol: isSymbol,
+  isString: isString,
+  isNumber: isNumber,
+  isNullOrUndefined: isNullOrUndefined,
+  isNull: isNull,
+  isBoolean: isBoolean,
+  isArray: isArray,
+  inspect: inspect,
+  deprecate: deprecate,
+  format: format,
+  debuglog: debuglog
+};
+
+
+var util$1 = Object.freeze({
+	format: format,
+	deprecate: deprecate,
+	debuglog: debuglog,
+	inspect: inspect,
+	isArray: isArray,
+	isBoolean: isBoolean,
+	isNull: isNull,
+	isNullOrUndefined: isNullOrUndefined,
+	isNumber: isNumber,
+	isString: isString,
+	isSymbol: isSymbol,
+	isUndefined: isUndefined,
+	isRegExp: isRegExp,
+	isObject: isObject,
+	isDate: isDate,
+	isError: isError,
+	isFunction: isFunction,
+	isPrimitive: isPrimitive,
+	isBuffer: isBuffer,
+	log: log,
+	inherits: inherits$1,
+	_extend: _extend,
+	default: util
+});
+
+var yallist = Yallist;
+
+Yallist.Node = Node;
+Yallist.create = Yallist;
+
+function Yallist (list) {
+  var self = this;
+  if (!(self instanceof Yallist)) {
+    self = new Yallist();
+  }
+
+  self.tail = null;
+  self.head = null;
+  self.length = 0;
+
+  if (list && typeof list.forEach === 'function') {
+    list.forEach(function (item) {
+      self.push(item);
+    });
+  } else if (arguments.length > 0) {
+    for (var i = 0, l = arguments.length; i < l; i++) {
+      self.push(arguments[i]);
+    }
+  }
+
+  return self
+}
+
+Yallist.prototype.removeNode = function (node) {
+  if (node.list !== this) {
+    throw new Error('removing node which does not belong to this list')
+  }
+
+  var next = node.next;
+  var prev = node.prev;
+
+  if (next) {
+    next.prev = prev;
+  }
+
+  if (prev) {
+    prev.next = next;
+  }
+
+  if (node === this.head) {
+    this.head = next;
+  }
+  if (node === this.tail) {
+    this.tail = prev;
+  }
+
+  node.list.length--;
+  node.next = null;
+  node.prev = null;
+  node.list = null;
+};
+
+Yallist.prototype.unshiftNode = function (node) {
+  if (node === this.head) {
+    return
+  }
+
+  if (node.list) {
+    node.list.removeNode(node);
+  }
+
+  var head = this.head;
+  node.list = this;
+  node.next = head;
+  if (head) {
+    head.prev = node;
+  }
+
+  this.head = node;
+  if (!this.tail) {
+    this.tail = node;
+  }
+  this.length++;
+};
+
+Yallist.prototype.pushNode = function (node) {
+  if (node === this.tail) {
+    return
+  }
+
+  if (node.list) {
+    node.list.removeNode(node);
+  }
+
+  var tail = this.tail;
+  node.list = this;
+  node.prev = tail;
+  if (tail) {
+    tail.next = node;
+  }
+
+  this.tail = node;
+  if (!this.head) {
+    this.head = node;
+  }
+  this.length++;
+};
+
+Yallist.prototype.push = function () {
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    push(this, arguments[i]);
+  }
+  return this.length
+};
+
+Yallist.prototype.unshift = function () {
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    unshift(this, arguments[i]);
+  }
+  return this.length
+};
+
+Yallist.prototype.pop = function () {
+  if (!this.tail) {
+    return undefined
+  }
+
+  var res = this.tail.value;
+  this.tail = this.tail.prev;
+  if (this.tail) {
+    this.tail.next = null;
+  } else {
+    this.head = null;
+  }
+  this.length--;
+  return res
+};
+
+Yallist.prototype.shift = function () {
+  if (!this.head) {
+    return undefined
+  }
+
+  var res = this.head.value;
+  this.head = this.head.next;
+  if (this.head) {
+    this.head.prev = null;
+  } else {
+    this.tail = null;
+  }
+  this.length--;
+  return res
+};
+
+Yallist.prototype.forEach = function (fn, thisp) {
+  thisp = thisp || this;
+  for (var walker = this.head, i = 0; walker !== null; i++) {
+    fn.call(thisp, walker.value, i, this);
+    walker = walker.next;
+  }
+};
+
+Yallist.prototype.forEachReverse = function (fn, thisp) {
+  thisp = thisp || this;
+  for (var walker = this.tail, i = this.length - 1; walker !== null; i--) {
+    fn.call(thisp, walker.value, i, this);
+    walker = walker.prev;
+  }
+};
+
+Yallist.prototype.get = function (n) {
+  for (var i = 0, walker = this.head; walker !== null && i < n; i++) {
+    // abort out of the list early if we hit a cycle
+    walker = walker.next;
+  }
+  if (i === n && walker !== null) {
+    return walker.value
+  }
+};
+
+Yallist.prototype.getReverse = function (n) {
+  for (var i = 0, walker = this.tail; walker !== null && i < n; i++) {
+    // abort out of the list early if we hit a cycle
+    walker = walker.prev;
+  }
+  if (i === n && walker !== null) {
+    return walker.value
+  }
+};
+
+Yallist.prototype.map = function (fn, thisp) {
+  thisp = thisp || this;
+  var res = new Yallist();
+  for (var walker = this.head; walker !== null;) {
+    res.push(fn.call(thisp, walker.value, this));
+    walker = walker.next;
+  }
+  return res
+};
+
+Yallist.prototype.mapReverse = function (fn, thisp) {
+  thisp = thisp || this;
+  var res = new Yallist();
+  for (var walker = this.tail; walker !== null;) {
+    res.push(fn.call(thisp, walker.value, this));
+    walker = walker.prev;
+  }
+  return res
+};
+
+Yallist.prototype.reduce = function (fn, initial) {
+  var acc;
+  var walker = this.head;
+  if (arguments.length > 1) {
+    acc = initial;
+  } else if (this.head) {
+    walker = this.head.next;
+    acc = this.head.value;
+  } else {
+    throw new TypeError('Reduce of empty list with no initial value')
+  }
+
+  for (var i = 0; walker !== null; i++) {
+    acc = fn(acc, walker.value, i);
+    walker = walker.next;
+  }
+
+  return acc
+};
+
+Yallist.prototype.reduceReverse = function (fn, initial) {
+  var acc;
+  var walker = this.tail;
+  if (arguments.length > 1) {
+    acc = initial;
+  } else if (this.tail) {
+    walker = this.tail.prev;
+    acc = this.tail.value;
+  } else {
+    throw new TypeError('Reduce of empty list with no initial value')
+  }
+
+  for (var i = this.length - 1; walker !== null; i--) {
+    acc = fn(acc, walker.value, i);
+    walker = walker.prev;
+  }
+
+  return acc
+};
+
+Yallist.prototype.toArray = function () {
+  var arr = new Array(this.length);
+  for (var i = 0, walker = this.head; walker !== null; i++) {
+    arr[i] = walker.value;
+    walker = walker.next;
+  }
+  return arr
+};
+
+Yallist.prototype.toArrayReverse = function () {
+  var arr = new Array(this.length);
+  for (var i = 0, walker = this.tail; walker !== null; i++) {
+    arr[i] = walker.value;
+    walker = walker.prev;
+  }
+  return arr
+};
+
+Yallist.prototype.slice = function (from, to) {
+  to = to || this.length;
+  if (to < 0) {
+    to += this.length;
+  }
+  from = from || 0;
+  if (from < 0) {
+    from += this.length;
+  }
+  var ret = new Yallist();
+  if (to < from || to < 0) {
+    return ret
+  }
+  if (from < 0) {
+    from = 0;
+  }
+  if (to > this.length) {
+    to = this.length;
+  }
+  for (var i = 0, walker = this.head; walker !== null && i < from; i++) {
+    walker = walker.next;
+  }
+  for (; walker !== null && i < to; i++, walker = walker.next) {
+    ret.push(walker.value);
+  }
+  return ret
+};
+
+Yallist.prototype.sliceReverse = function (from, to) {
+  to = to || this.length;
+  if (to < 0) {
+    to += this.length;
+  }
+  from = from || 0;
+  if (from < 0) {
+    from += this.length;
+  }
+  var ret = new Yallist();
+  if (to < from || to < 0) {
+    return ret
+  }
+  if (from < 0) {
+    from = 0;
+  }
+  if (to > this.length) {
+    to = this.length;
+  }
+  for (var i = this.length, walker = this.tail; walker !== null && i > to; i--) {
+    walker = walker.prev;
+  }
+  for (; walker !== null && i > from; i--, walker = walker.prev) {
+    ret.push(walker.value);
+  }
+  return ret
+};
+
+Yallist.prototype.reverse = function () {
+  var head = this.head;
+  var tail = this.tail;
+  for (var walker = head; walker !== null; walker = walker.prev) {
+    var p = walker.prev;
+    walker.prev = walker.next;
+    walker.next = p;
+  }
+  this.head = tail;
+  this.tail = head;
+  return this
+};
+
+function push (self, item) {
+  self.tail = new Node(item, self.tail, null, self);
+  if (!self.head) {
+    self.head = self.tail;
+  }
+  self.length++;
+}
+
+function unshift (self, item) {
+  self.head = new Node(item, null, self.head, self);
+  if (!self.tail) {
+    self.tail = self.head;
+  }
+  self.length++;
+}
+
+function Node (value, prev, next, list) {
+  if (!(this instanceof Node)) {
+    return new Node(value, prev, next, list)
+  }
+
+  this.list = list;
+  this.value = value;
+
+  if (prev) {
+    prev.next = this;
+    this.prev = prev;
+  } else {
+    this.prev = null;
+  }
+
+  if (next) {
+    next.prev = this;
+    this.next = next;
+  } else {
+    this.next = null;
+  }
+}
+
+var util$2 = ( util$1 && util ) || util$1;
+
+var lruCache = LRUCache;
+
+// This will be a proper iterable 'Map' in engines that support it,
+// or a fakey-fake PseudoMap in older versions.
+
+
+
+// A linked list to keep track of recently-used-ness
+
+
+// use symbols if possible, otherwise just _props
+var hasSymbol$1 = typeof Symbol === 'function';
+var makeSymbol;
+if (hasSymbol$1) {
+  makeSymbol = function (key) {
+    return Symbol.for(key)
+  };
+} else {
+  makeSymbol = function (key) {
+    return '_' + key
+  };
+}
+
+var MAX = makeSymbol('max');
+var LENGTH = makeSymbol('length');
+var LENGTH_CALCULATOR = makeSymbol('lengthCalculator');
+var ALLOW_STALE = makeSymbol('allowStale');
+var MAX_AGE = makeSymbol('maxAge');
+var DISPOSE = makeSymbol('dispose');
+var NO_DISPOSE_ON_SET = makeSymbol('noDisposeOnSet');
+var LRU_LIST = makeSymbol('lruList');
+var CACHE = makeSymbol('cache');
+
+function naiveLength () { return 1 }
+
+// lruList is a yallist where the head is the youngest
+// item, and the tail is the oldest.  the list contains the Hit
+// objects as the entries.
+// Each Hit object has a reference to its Yallist.Node.  This
+// never changes.
+//
+// cache is a Map (or PseudoMap) that matches the keys to
+// the Yallist.Node object.
+function LRUCache (options) {
+  if (!(this instanceof LRUCache)) {
+    return new LRUCache(options)
+  }
+
+  if (typeof options === 'number') {
+    options = { max: options };
+  }
+
+  if (!options) {
+    options = {};
+  }
+
+  var max = this[MAX] = options.max;
+  // Kind of weird to have a default max of Infinity, but oh well.
+  if (!max ||
+      !(typeof max === 'number') ||
+      max <= 0) {
+    this[MAX] = Infinity;
+  }
+
+  var lc = options.length || naiveLength;
+  if (typeof lc !== 'function') {
+    lc = naiveLength;
+  }
+  this[LENGTH_CALCULATOR] = lc;
+
+  this[ALLOW_STALE] = options.stale || false;
+  this[MAX_AGE] = options.maxAge || 0;
+  this[DISPOSE] = options.dispose;
+  this[NO_DISPOSE_ON_SET] = options.noDisposeOnSet || false;
+  this.reset();
+}
+
+// resize the cache when the max changes.
+Object.defineProperty(LRUCache.prototype, 'max', {
+  set: function (mL) {
+    if (!mL || !(typeof mL === 'number') || mL <= 0) {
+      mL = Infinity;
+    }
+    this[MAX] = mL;
+    trim(this);
+  },
+  get: function () {
+    return this[MAX]
+  },
+  enumerable: true
+});
+
+Object.defineProperty(LRUCache.prototype, 'allowStale', {
+  set: function (allowStale) {
+    this[ALLOW_STALE] = !!allowStale;
+  },
+  get: function () {
+    return this[ALLOW_STALE]
+  },
+  enumerable: true
+});
+
+Object.defineProperty(LRUCache.prototype, 'maxAge', {
+  set: function (mA) {
+    if (!mA || !(typeof mA === 'number') || mA < 0) {
+      mA = 0;
+    }
+    this[MAX_AGE] = mA;
+    trim(this);
+  },
+  get: function () {
+    return this[MAX_AGE]
+  },
+  enumerable: true
+});
+
+// resize the cache when the lengthCalculator changes.
+Object.defineProperty(LRUCache.prototype, 'lengthCalculator', {
+  set: function (lC) {
+    if (typeof lC !== 'function') {
+      lC = naiveLength;
+    }
+    if (lC !== this[LENGTH_CALCULATOR]) {
+      this[LENGTH_CALCULATOR] = lC;
+      this[LENGTH] = 0;
+      this[LRU_LIST].forEach(function (hit) {
+        hit.length = this[LENGTH_CALCULATOR](hit.value, hit.key);
+        this[LENGTH] += hit.length;
+      }, this);
+    }
+    trim(this);
+  },
+  get: function () { return this[LENGTH_CALCULATOR] },
+  enumerable: true
+});
+
+Object.defineProperty(LRUCache.prototype, 'length', {
+  get: function () { return this[LENGTH] },
+  enumerable: true
+});
+
+Object.defineProperty(LRUCache.prototype, 'itemCount', {
+  get: function () { return this[LRU_LIST].length },
+  enumerable: true
+});
+
+LRUCache.prototype.rforEach = function (fn, thisp) {
+  thisp = thisp || this;
+  for (var walker = this[LRU_LIST].tail; walker !== null;) {
+    var prev = walker.prev;
+    forEachStep(this, fn, walker, thisp);
+    walker = prev;
+  }
+};
+
+function forEachStep (self, fn, node, thisp) {
+  var hit = node.value;
+  if (isStale(self, hit)) {
+    del(self, node);
+    if (!self[ALLOW_STALE]) {
+      hit = undefined;
+    }
+  }
+  if (hit) {
+    fn.call(thisp, hit.value, hit.key, self);
+  }
+}
+
+LRUCache.prototype.forEach = function (fn, thisp) {
+  thisp = thisp || this;
+  for (var walker = this[LRU_LIST].head; walker !== null;) {
+    var next = walker.next;
+    forEachStep(this, fn, walker, thisp);
+    walker = next;
+  }
+};
+
+LRUCache.prototype.keys = function () {
+  return this[LRU_LIST].toArray().map(function (k) {
+    return k.key
+  }, this)
+};
+
+LRUCache.prototype.values = function () {
+  return this[LRU_LIST].toArray().map(function (k) {
+    return k.value
+  }, this)
+};
+
+LRUCache.prototype.reset = function () {
+  if (this[DISPOSE] &&
+      this[LRU_LIST] &&
+      this[LRU_LIST].length) {
+    this[LRU_LIST].forEach(function (hit) {
+      this[DISPOSE](hit.key, hit.value);
+    }, this);
+  }
+
+  this[CACHE] = new map(); // hash of items by key
+  this[LRU_LIST] = new yallist(); // list of items in order of use recency
+  this[LENGTH] = 0; // length of items in the list
+};
+
+LRUCache.prototype.dump = function () {
+  return this[LRU_LIST].map(function (hit) {
+    if (!isStale(this, hit)) {
+      return {
+        k: hit.key,
+        v: hit.value,
+        e: hit.now + (hit.maxAge || 0)
+      }
+    }
+  }, this).toArray().filter(function (h) {
+    return h
+  })
+};
+
+LRUCache.prototype.dumpLru = function () {
+  return this[LRU_LIST]
+};
+
+LRUCache.prototype.inspect = function (n, opts) {
+  var str = 'LRUCache {';
+  var extras = false;
+
+  var as = this[ALLOW_STALE];
+  if (as) {
+    str += '\n  allowStale: true';
+    extras = true;
+  }
+
+  var max = this[MAX];
+  if (max && max !== Infinity) {
+    if (extras) {
+      str += ',';
+    }
+    str += '\n  max: ' + util$2.inspect(max, opts);
+    extras = true;
+  }
+
+  var maxAge = this[MAX_AGE];
+  if (maxAge) {
+    if (extras) {
+      str += ',';
+    }
+    str += '\n  maxAge: ' + util$2.inspect(maxAge, opts);
+    extras = true;
+  }
+
+  var lc = this[LENGTH_CALCULATOR];
+  if (lc && lc !== naiveLength) {
+    if (extras) {
+      str += ',';
+    }
+    str += '\n  length: ' + util$2.inspect(this[LENGTH], opts);
+    extras = true;
+  }
+
+  var didFirst = false;
+  this[LRU_LIST].forEach(function (item) {
+    if (didFirst) {
+      str += ',\n  ';
+    } else {
+      if (extras) {
+        str += ',\n';
+      }
+      didFirst = true;
+      str += '\n  ';
+    }
+    var key = util$2.inspect(item.key).split('\n').join('\n  ');
+    var val = { value: item.value };
+    if (item.maxAge !== maxAge) {
+      val.maxAge = item.maxAge;
+    }
+    if (lc !== naiveLength) {
+      val.length = item.length;
+    }
+    if (isStale(this, item)) {
+      val.stale = true;
+    }
+
+    val = util$2.inspect(val, opts).split('\n').join('\n  ');
+    str += key + ' => ' + val;
+  });
+
+  if (didFirst || extras) {
+    str += '\n';
+  }
+  str += '}';
+
+  return str
+};
+
+LRUCache.prototype.set = function (key, value, maxAge) {
+  maxAge = maxAge || this[MAX_AGE];
+
+  var now = maxAge ? Date.now() : 0;
+  var len = this[LENGTH_CALCULATOR](value, key);
+
+  if (this[CACHE].has(key)) {
+    if (len > this[MAX]) {
+      del(this, this[CACHE].get(key));
+      return false
+    }
+
+    var node = this[CACHE].get(key);
+    var item = node.value;
+
+    // dispose of the old one before overwriting
+    // split out into 2 ifs for better coverage tracking
+    if (this[DISPOSE]) {
+      if (!this[NO_DISPOSE_ON_SET]) {
+        this[DISPOSE](key, item.value);
+      }
+    }
+
+    item.now = now;
+    item.maxAge = maxAge;
+    item.value = value;
+    this[LENGTH] += len - item.length;
+    item.length = len;
+    this.get(key);
+    trim(this);
+    return true
+  }
+
+  var hit = new Entry(key, value, len, now, maxAge);
+
+  // oversized objects fall out of cache automatically.
+  if (hit.length > this[MAX]) {
+    if (this[DISPOSE]) {
+      this[DISPOSE](key, value);
+    }
+    return false
+  }
+
+  this[LENGTH] += hit.length;
+  this[LRU_LIST].unshift(hit);
+  this[CACHE].set(key, this[LRU_LIST].head);
+  trim(this);
+  return true
+};
+
+LRUCache.prototype.has = function (key) {
+  if (!this[CACHE].has(key)) return false
+  var hit = this[CACHE].get(key).value;
+  if (isStale(this, hit)) {
+    return false
+  }
+  return true
+};
+
+LRUCache.prototype.get = function (key) {
+  return get(this, key, true)
+};
+
+LRUCache.prototype.peek = function (key) {
+  return get(this, key, false)
+};
+
+LRUCache.prototype.pop = function () {
+  var node = this[LRU_LIST].tail;
+  if (!node) return null
+  del(this, node);
+  return node.value
+};
+
+LRUCache.prototype.del = function (key) {
+  del(this, this[CACHE].get(key));
+};
+
+LRUCache.prototype.load = function (arr) {
+  // reset the cache
+  this.reset();
+
+  var now = Date.now();
+  // A previous serialized cache has the most recent items first
+  for (var l = arr.length - 1; l >= 0; l--) {
+    var hit = arr[l];
+    var expiresAt = hit.e || 0;
+    if (expiresAt === 0) {
+      // the item was created without expiration in a non aged cache
+      this.set(hit.k, hit.v);
+    } else {
+      var maxAge = expiresAt - now;
+      // dont add already expired items
+      if (maxAge > 0) {
+        this.set(hit.k, hit.v, maxAge);
+      }
+    }
+  }
+};
+
+LRUCache.prototype.prune = function () {
+  var self = this;
+  this[CACHE].forEach(function (value, key) {
+    get(self, key, false);
+  });
+};
+
+function get (self, key, doUse) {
+  var node = self[CACHE].get(key);
+  if (node) {
+    var hit = node.value;
+    if (isStale(self, hit)) {
+      del(self, node);
+      if (!self[ALLOW_STALE]) hit = undefined;
+    } else {
+      if (doUse) {
+        self[LRU_LIST].unshiftNode(node);
+      }
+    }
+    if (hit) hit = hit.value;
+  }
+  return hit
+}
+
+function isStale (self, hit) {
+  if (!hit || (!hit.maxAge && !self[MAX_AGE])) {
+    return false
+  }
+  var stale = false;
+  var diff = Date.now() - hit.now;
+  if (hit.maxAge) {
+    stale = diff > hit.maxAge;
+  } else {
+    stale = self[MAX_AGE] && (diff > self[MAX_AGE]);
+  }
+  return stale
+}
+
+function trim (self) {
+  if (self[LENGTH] > self[MAX]) {
+    for (var walker = self[LRU_LIST].tail;
+         self[LENGTH] > self[MAX] && walker !== null;) {
+      // We know that we're about to delete this one, and also
+      // what the next least recently used key will be, so just
+      // go ahead and set it now.
+      var prev = walker.prev;
+      del(self, walker);
+      walker = prev;
+    }
+  }
+}
+
+function del (self, node) {
+  if (node) {
+    var hit = node.value;
+    if (self[DISPOSE]) {
+      self[DISPOSE](hit.key, hit.value);
+    }
+    self[LENGTH] -= hit.length;
+    self[CACHE].delete(hit.key);
+    self[LRU_LIST].removeNode(node);
+  }
+}
+
+// classy, since V8 prefers predictable objects.
+function Entry (key, value, length, now, maxAge) {
+  this.key = key;
+  this.value = value;
+  this.length = length;
+  this.now = now;
+  this.maxAge = maxAge || 0;
+}
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var ComponentCache = function () {
+  function ComponentCache() {
+    var config = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+    _classCallCheck(this, ComponentCache);
+
+    if (Number.isInteger(config)) {
+      config = {
+        max: config
+      };
+    }
+
+    this.storage = lruCache({
+      max: config.max || 1000000000,
+      length: function (n, key) {
+        return n.length + key.length;
+      }
+    });
+  }
+
+  ComponentCache.prototype.get = function get(cacheKey, cb) {
+    var reply = this.storage.get(cacheKey);
+    cb(null, reply);
+  };
+
+  ComponentCache.prototype.set = function set(cacheKey, html) {
+    this.storage.set(cacheKey, html);
+  };
+
+  return ComponentCache;
+}();
+
 // Note: when changing this, also consider https://github.com/facebook/react/issues/11526
+
+
 var ReactDOMServerNode = {
   renderToString: renderToString,
   renderToStaticMarkup: renderToStaticMarkup,
   renderToNodeStream: renderToNodeStream,
   renderToStaticNodeStream: renderToStaticNodeStream,
+  ComponentCache: ComponentCache,
   version: ReactVersion
 };
 

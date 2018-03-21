@@ -2660,9 +2660,9 @@ async function renderToString(element, cache, memLife=0) {
  * such as data-react-id that React uses internally.
  * See https://reactjs.org/docs/react-dom-server.html#rendertostaticmarkup
  */
-function renderToStaticMarkup(element, cache, memLife=0) {
+async function renderToStaticMarkup(element, cache, memLife=0) {
   var renderer = new ReactDOMServerRenderer(element, true);
-  var markup = renderer.read(Infinity, cache, false, null, memLife);
+  var markup = await renderer.read(Infinity, cache, false, null, memLife);
   return markup;
 }
 
