@@ -2,9 +2,9 @@
 
 ## Overview
 React Component Caching is a component-level caching library for faster server-side rendering with React 16.  
-- Use any of React's four server-side rendering methods
-- Cache components using a simple or template strategy
-- Choose from three cache implementations (LRU, Redis, or Memcached)
+- Use any of React's four server-side rendering methods. Rendering is **asynchronous**.
+- Cache components using a simple or template strategy.
+- Choose from three cache implementations (LRU, Redis, or Memcached).
 
 ## Installation
 Using npm:
@@ -15,6 +15,8 @@ $ npm install react-component-caching
 ## Usage
 ### In Node rendering server:
 Instantiate a cache and pass it to any rendering method (`renderToString`, `renderToStaticMarkup`, `renderToNodeStream`, or `renderToStaticNodeStream`) as a second argument. Wherever you would use `ReactDOM.renderToString`, use `ReactCC.renderToString`.
+
+**Note: All of these methods are asynchronous, and return a promise. To use them, `await` the response before rendering**
 ```javascript
 const ReactCC = require("react-component-caching");
 const cache = ReactCC.ComponentCache();
