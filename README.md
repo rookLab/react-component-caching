@@ -2,9 +2,9 @@
 
 ## Overview
 React Component Caching is a component-level caching library for faster server-side rendering with React 16.  
-- Use any of React's four server-side rendering methods
-- Cache components using a simple or template strategy
-- Choose from three cache implementations (LRU, Redis, or Memcached)
+- Use any of React's four server-side rendering methods. Rendering is **asynchronous**.
+- Cache components using a simple or template strategy.
+- Choose from three cache implementations (LRU, Redis, or Memcached).
 
 ## Installation
 Using npm:
@@ -15,10 +15,16 @@ $ npm install react-component-caching
 ## Usage
 ### In Node rendering server:
 Instantiate a cache and pass it to any rendering method (`renderToString`, `renderToStaticMarkup`, `renderToNodeStream`, or `renderToStaticNodeStream`) as a second argument. Wherever you would use `ReactDOM.renderToString`, use `ReactCC.renderToString`.
+
+**Note: All of these methods are asynchronous, and return a promise. To use them, `await` the response before rendering**
 ```javascript
 const ReactCC = require("react-component-caching");
-const cache = ReactCC.ComponentCache();
-ReactCC.renderToString(<App />, cache>)
+const cache = new ReactCC.ComponentCache();
+
+app.get('/example', async (req,res) => {
+    const renderString = await ReactCC.renderToString(<App />, cache);
+    res.send(renderString);
+});
 
 // ...
 ```
@@ -52,7 +58,12 @@ export default class App extends Component {
             <div>
                 <ComponentNotToBeCached />
                 <ComponentToCache cache />
-                <ComponentToTemplatize templatizedProp1="value" templatizedProp2="value2" nonTemplatizedProp="anotherValue" cache templatized={["templatizedProp1", "templatizedProp2"]} />
+                <ComponentToTemplatize
+                    templatizedProp1="value1"
+                    templatizedProp2="value2"
+                    nonTemplatizedProp="anotherValue"
+                    cache
+                    templatized={["templatizedProp1", "templatizedProp2"]} />
             </div>
         );
     }
@@ -77,10 +88,7 @@ React Component Caching provides its own cache implementation as well as support
 
 ```javascript
 const ReactCC = require("react-component-caching");
-
-const cache = ReactCC.ComponentCache();
-
-ReactCC.renderToString(<App />, cache);
+const cache = new ReactCC.ComponentCache();
 ```
 
 **Redis Example:**
@@ -88,10 +96,7 @@ ReactCC.renderToString(<App />, cache);
 ```javascript
 const ReactCC = require("react-component-caching");
 const redis = require("redis");
-
 const cache = redis.createClient();
-
-ReactCC.renderToString(<App />, cache);
 ```
 
 **Memcached Example:**
@@ -99,10 +104,9 @@ ReactCC.renderToString(<App />, cache);
 ```javascript
 const ReactCC = require("react-component-caching");
 const Memcached = require("memcached");
-
 const cache = new Memcached(server location, options);
 
-// Make sure to pass in the lifetime of the data (in seconds) as a number.
+// If using Memcached, make sure to pass in the lifetime of the data (in seconds) as a number.
 ReactCC.renderToString(<App />, cache, 1000);
 ```
 

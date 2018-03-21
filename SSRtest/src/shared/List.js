@@ -12,7 +12,7 @@ export default class List extends Component {
         let bunchOfProducts = [];
         const templatizedProps = ["name", "description", "price"];
         for (let i=0; i<1000; i++) {
-            bunchOfProducts.push(<ProductInfo key={i} name={`Thing ${i}`} description="This product is awesome!" price={i * 10} nonTemplatized="THIS TEXT SHOULD NEVER CHANGE" />);
+            bunchOfProducts.push(<ProductInfo key={i} name={`Thing ${i}`} description="This product is awesome!" price={i * 10} nonTemplatized="THIS TEXT SHOULD NEVER CHANGE" templatized={templatizedProps}/>);
         }
         return (
             <div>

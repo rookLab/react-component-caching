@@ -17,10 +17,10 @@ export default class App extends Component {
         return (
             <div>
                 <h1>THIS IS AN APP</h1>
-                <Button />
-                <BlogPost />
-                <BlogPost />   
-                <List />
+                <Button cache />
+                <BlogPost cache />
+                <BlogPost cache />   
+                <List cache />
                 
             </div>
         );
