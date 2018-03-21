@@ -1,7 +1,6 @@
 import React from 'react';
-// import ReactDOM from '../../nodeProdBuild';
-// import ReactDOM from '../../browserDevBuild';
-import ReactCC from '../../developmentBuild';
+// import ReactCC from '../../developmentBuild';
+import ReactCC from '../../productionBuild';
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
 
@@ -15,6 +14,7 @@ const cache = new ReactCC.ComponentCache();
 // const cache = new memcached('localhost:11211');
 
 // Force NodeStream
+import createCacheStream from './cacheStream';
 
 const htmlStart =
   '<html><head><title>Page</title></head><body><div id="react-root">';
@@ -29,37 +29,37 @@ const streamingStart = {
  */
 export default ({ clientStats }) => async (req, res) => {
   // Need To Come back To If Statement
-  if(false){
-    const cacheStream = ReactCC.createCacheStream(cache, streamingStart);
-    cacheStream.pipe(res);
-    cacheStream.write(htmlStart);
+  // if(false){
+    // const cacheStream = createCacheStream(cache, streamingStart);
+    // cacheStream.pipe(res);
+    // cacheStream.write(htmlStart);
 
-    const stream = ReactCC.renderToNodeStream(<App />, cache, streamingStart);
-    stream.pipe(cacheStream, { end: false });
-    stream.on("end", () => {
-      cacheStream.end(htmlEnd);
-    });
-  }
-  else if (true){
-    const app = <App />;
-    const start_cached = process.hrtime();
+    ReactCC.renderToNodeStream(<App />, cache, res);
+    // stream.pipe(cacheStream, { end: false });
+    // stream.on("end", () => {
+    //   cacheStream.end(htmlEnd);
+    // });
+  // }
+  // else if (true){
+    // const app = <App />;
+    // const start_cached = process.hrtime();
     
-    const appString = await ReactCC.renderToString(app, cache, 30);
-    const end_cached = process.hrtime(start_cached);
-    console.info(
-      "Cached render time: %ds %dms",
-      end_cached[0],
-      end_cached[1] / 1000000
-    );
-    const chunkNames = flushChunkNames();
-    const { js, styles, cssHash } = flushChunks(clientStats, { chunkNames });
+    // const appString = await ReactCC.renderToString(app, cache);
+    // const end_cached = process.hrtime(start_cached);
+    // console.info(
+    //   "Cached render time: %ds %dms",
+    //   end_cached[0],
+    //   end_cached[1] / 1000000
+    // );
+    // const chunkNames = flushChunkNames();
+    // const { js, styles, cssHash } = flushChunks(clientStats, { chunkNames });
    
-    res.render("index", {
-      appString,
-      js,
-      styles,
-      cssHash
-    });
-  }
+    // res.render("index", {
+    //   appString,
+    //   js,
+    //   styles,
+    //   cssHash
+    // });
+  // }
     
    };
