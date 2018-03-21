@@ -1,7 +1,8 @@
 import React from 'react';
 // import ReactCC from '../../developmentBuild';
-import ReactCC from '../../productionBuild';
+// import ReactCC from '../../productionBuild';
 // import ReactCC from 'react-dom/server'
+import ReactCC from 'react-component-caching'
 import { flushChunkNames } from 'react-universal-component/server';
 import flushChunks from 'webpack-flush-chunks';
 // import nodeStream from "./nodeStream.js";

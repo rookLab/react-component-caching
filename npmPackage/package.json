@@ -1,6 +1,6 @@
 {
   "name": "react-component-caching",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Component caching library for server-side rendering in React",
   "main": "index.js",
   "directories": {
@@ -21,10 +21,6 @@
   "homepage": "https://github.com/rookLab/react-component-caching#readme",
   "dependencies": {
     "fbjs": "^0.8.16",
-    "lru-cache": "^4.1.2",
     "object-assign": "^4.1.1"
-  },
-  "devDependencies": {
-    "uglifyjs-webpack-plugin": "^1.2.4"
   }
 }
