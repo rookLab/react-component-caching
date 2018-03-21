@@ -35,7 +35,7 @@ export default ({ clientStats }) => async (req, res) => {
     // cacheStream.pipe(res);
     // cacheStream.write(htmlStart);
 
-    // ReactCC.renderToNodeStream(<App />, cache, res);
+    ReactCC.renderToNodeStream(<App />, cache, res);
     // stream.pipe(cacheStream, { end: false });
     // stream.on("end", () => {
     //   cacheStream.end(htmlEnd);
