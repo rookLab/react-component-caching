@@ -59,6 +59,16 @@ export default class App extends Component {
 }
 // ...
 ```
+## Streaming HTML Markup
+To use streaming on the server side, use either the renderToStaticNodeStream or renderToNodeStream. Both streaming option works with caching, but not yet compatible with templatization. To use the streaming functions, simply pass in these 5 arguments:
+(
+`component`: The React component being rendered
+`cache`: The component cache object
+`res`: The response object that Express provides
+`htmlStart`: Start of html markup in string form
+`htmlEnd`: End of html markup in string form
+).
+The benefit that comes with streaming is faster time to first byte, which translates to faster viewing of page content. 
 
 ## Cache Options
 React Component Caching provides its own cache implementation as well as support for Redis and Memcached. Simply create your preferred cache and pass it into one of the rendering methods.
@@ -98,7 +108,7 @@ ReactCC.renderToString(<App />, cache, 1000);
 
 ## API
 
-### ReactCC
+### React Component Caching
 React Component Caching gives you access to all four of React 16's server-side rendering methods, as well as additional functionality. Available methods are described below.
 
 ### ComponentCache
@@ -131,7 +141,7 @@ ReactCC.renderToStaticMarkup(<App />, cache);
 
 ### renderToNodeStream
 - `component`: The React component being rendered
-- `cache`: The component cache
+- `cache`: The component cache object
 - `res`: The response object that Express provides
 - `htmlStart`: Start of html markup in string form
 - `htmlEnd`: End of html markup in string form
@@ -146,7 +156,7 @@ ReactCC.renderToNodeStream(<App />, cache, res, htmlStart, htmlEnd);
 
 ### renderToStaticNodeStream
 - `component`: The React component being rendered
-- `cache`: The component cache
+- `cache`: The component cache object
 - `res`: The response object that Express provides
 - `htmlStart`: Start of html markup in string form
 - `htmlEnd`: End of html markup in string form
