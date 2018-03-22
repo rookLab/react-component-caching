@@ -172,3 +172,10 @@ let htmlStart = '<html><head><title>Page</title></head><body><div id="react-root
 let htmlEnd = '</div></body></html>';
 ReactCC.renderToStaticNodeStream(<App />, cache, res, htmlStart, htmlEnd);
 ```
+
+## Authors
+- [Mejin Leechor](https://github.com/mejincodes)
+- [Annie DiFiore](https://github.com/adifiore)
+- [Steven Lee](https://github.com/stevedorke)
+- [Tim Hong](https://github.com/tjhong30)
+- [Zihao Li](https://github.com/kodakyellow)
