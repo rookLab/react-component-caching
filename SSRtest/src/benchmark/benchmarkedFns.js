@@ -5,17 +5,14 @@ import ReactDOMServer from "./../../ModifiedReact.js";
 // import LRUCache from '../SSRtest/LRUCache';
 // import redis from 'redis';
 // const cache = redis.createClient();
-// const cache = {};
-const cache = new LRUCache(800);
-
+// // const cache = {};
+// const cache = new LRUCache(800);
+import { cache } from "../server/index.js";
 const depth = 4,
   breadth = 11;
 
 const render = () => {
-  ReactDOMServer.renderToString(
-    <App/>,
-    cache
-  );
+  ReactDOMServer.renderToString(<App />, cache);
 };
 
 export default [{ name: "Testing render time", fn: render }];
