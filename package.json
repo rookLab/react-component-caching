@@ -1,0 +1,30 @@
+{
+  "name": "react-component-caching",
+  "version": "1.1.0",
+  "description": "React Component Caching is a component-level caching library for faster server-side rendering with React 16",
+  "main": "index.js",
+  "scripts": {
+    "webpack": "./node_modules/.bin/webpack -w"
+  },
+  "keywords": [
+    "ssr",
+    "react",
+    "fiber",
+    "server side rendering",
+    "component caching"
+  ],
+  "author": {
+    "name": "rookLab"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fbjs": "^0.8.16",
+    "lru-cache": "^4.1.1",
+    "object-assign": "^4.1.1",
+    "prop-types": "^15.6.1",
+    "react": "^16.2.0"
+  },
+  "devDependencies": {
+    "webpack": "^3.5.5"
+  }
+}
