@@ -1,5 +1,5 @@
+var ReactDOMServerRenderer = require('./index').ReactDOMServerRenderer;
 // This is a Readable Node.js stream which wraps the ReactDOMPartialRenderer.
-var ReactDOMServerRenderer = require('./ReactPartialRenderer');
 
 var ReactMarkupReadableStream = (function(_Readable) {
   _inherits(ReactMarkupReadableStream, _Readable);
@@ -143,8 +143,6 @@ function createCacheStream(cache, streamingStart, memLife = 0) {
   });
 }
 
-
-
 function renderToNodeStream(compo, cache, res, htmlSt, htmlEn) {
   const htmlStart = htmlSt;
   // '<html><head><title>Page</title></head><body><div id="react-root">';
@@ -193,7 +191,7 @@ function renderToStaticNodeStream(compo, cache, res, htmlSt, htmlEn) {
   });
 }
 
-export default {
+export {
   renderToNodeStream,
   renderToStaticNodeStream
 }

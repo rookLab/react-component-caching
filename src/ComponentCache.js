@@ -1,4 +1,4 @@
-const lru = require('lru-cache');
+var lru = require("lru-cache");
 
 export default class ComponentCache {
   constructor(config = {}) {
