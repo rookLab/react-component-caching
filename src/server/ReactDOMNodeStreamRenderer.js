@@ -99,7 +99,7 @@ function originalRenderToNodeStream(element, cache, streamingStart, memLife=0) {
   return new ReactMarkupReadableStream(element, false, cache, streamingStart, memLife);
 }
 
-export function renderToNodeStream(element, cache, res, htmlStart, htmlEnd) {
+export function renderToNodeStream(element, cache, res, htmlStart, htmlEnd, memLife) {
 
   const streamingStart = {
     sliceStartCount: htmlStart.length, 
@@ -109,7 +109,7 @@ export function renderToNodeStream(element, cache, res, htmlStart, htmlEnd) {
     cacheStream.pipe(res);
     cacheStream.write(htmlStart);
 
-    const stream = originalRenderToNodeStream(element, cache, streamingStart);
+    const stream = originalRenderToNodeStream(element, cache, streamingStart, memLife);
     stream.pipe(cacheStream, { end: false });
     stream.on("end", () => {
       cacheStream.end(htmlEnd);
@@ -126,7 +126,7 @@ function originalRenderToStaticNodeStream(element, cache, streamingStart, memLif
   return new ReactMarkupReadableStream(element, true, cache, streamingStart, memLife);
 }
 
-export function renderToStaticNodeStream(element, cache, res, htmlStart, htmlEnd) {
+export function renderToStaticNodeStream(element, cache, res, htmlStart, htmlEnd, memLife) {
 
   const streamingStart = {
     sliceStartCount: htmlStart.length, 
@@ -136,7 +136,7 @@ export function renderToStaticNodeStream(element, cache, res, htmlStart, htmlEnd
     cacheStream.pipe(res);
     cacheStream.write(htmlStart);
 
-    const stream = originalRenderToStaticNodeStream(element, cache, streamingStart);
+    const stream = originalRenderToStaticNodeStream(element, cache, streamingStart, memLife);
     stream.pipe(cacheStream, { end: false });
     stream.on("end", () => {
       cacheStream.end(htmlEnd);
