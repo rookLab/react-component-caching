@@ -18,13 +18,14 @@ Instantiate a cache and pass it to any rendering method (`renderToString`, `rend
 
 **Note: All of these methods are asynchronous, and return a promise. To use them, `await` the response before rendering**
 ```javascript
+const asyncHandler = require('express-async-handler');
 const ReactCC = require("react-component-caching");
 const cache = new ReactCC.ComponentCache();
 
-app.get('/example', async (req,res) => {
+app.get('/example', asyncHandler(async (req,res) => {
     const renderString = await ReactCC.renderToString(<App />, cache);
     res.send(renderString);
-});
+}));
 
 // ...
 ```
